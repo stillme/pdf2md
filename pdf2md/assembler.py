@@ -25,9 +25,10 @@ _NUMBERED_KNOWN_RE = re.compile(
     re.IGNORECASE,
 )
 
-# General numbered headings: "2.1 Data Collection" (short title, starts uppercase)
+# General numbered headings: "2.1 Data Collection", "3. Weak formulation"
+# Title must start uppercase, be 2-40 chars, and NOT be ALL CAPS (those are likely running headers)
 _NUMBERED_GENERAL_RE = re.compile(
-    r"^(\d+(?:\.\d+)*)\s+([A-Z][a-zA-Z\s]{2,40})$"
+    r"^(\d+(?:\.\d+)*)\.?\s+([A-Z][a-z][a-zA-Z\s,\-]{1,40})$"
 )
 
 # ALL CAPS short lines (>3 chars, <=6 words) as headings
@@ -51,10 +52,13 @@ def _is_heading(line: str) -> dict | None:
     if not stripped or len(stripped) > 80:
         return None
 
-    # Check numbered heading patterns BEFORE the period-space rejection,
-    # since "1. Introduction" legitimately contains ". "
-    # Numbered headings with known section names
+    # Check ALL numbered heading patterns BEFORE the period-space rejection,
+    # since "1. Introduction" and "2. Problem statement" legitimately contain ". "
     m = _NUMBERED_KNOWN_RE.match(stripped)
+    if m:
+        return {"text": stripped, "level": _numbering_depth(m.group(1))}
+
+    m = _NUMBERED_GENERAL_RE.match(stripped)
     if m:
         return {"text": stripped, "level": _numbering_depth(m.group(1))}
 
@@ -65,11 +69,6 @@ def _is_heading(line: str) -> dict | None:
     # Standard section names (unnumbered)
     if _HEADING_PATTERNS.match(stripped):
         return {"text": stripped, "level": 1}
-
-    # General numbered headings (short title starting with uppercase)
-    m = _NUMBERED_GENERAL_RE.match(stripped)
-    if m:
-        return {"text": stripped, "level": _numbering_depth(m.group(1))}
 
     # ALL CAPS: require at least 2 words AND minimum 8 characters total
     if _ALLCAPS_RE.match(stripped) and len(stripped) >= 8:
