@@ -160,3 +160,25 @@ def test_figure_panel_labels_not_headings():
     assert _is_heading("WT KO WT KO") is None
     # But real short headings still work
     assert _is_heading("Discussion") is not None
+
+
+def test_repeated_headers_deduped():
+    """Running headers that appear as section titles on many pages should be deduped.
+
+    Simulates even pages in a math paper where the page number is first, then the
+    running header — so _detect_repeated_lines does not catch it as a first/last line.
+    """
+    pages = []
+    for i in range(6):
+        # Page number is the first line; running header is the second line.
+        # This bypasses _detect_repeated_lines (which only looks at first/last lines)
+        # but _is_heading still detects the ALL-CAPS multi-word running header.
+        pages.append(PageContent(
+            page_number=i,
+            text=f"{i+2}\nDG FOR THE EMI MODEL\nSome content on page {i}.",
+            tables=[], figures=[], confidence=0.9,
+        ))
+    result = assemble_markdown(pages)
+    titles = [s.title for s in result.sections]
+    # "DG FOR THE EMI MODEL" should appear at most once
+    assert titles.count("DG FOR THE EMI MODEL") <= 1

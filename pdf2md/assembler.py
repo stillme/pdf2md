@@ -265,6 +265,18 @@ def assemble_markdown(pages: list[PageContent]) -> Document:
 
         md_parts.append("\n".join(page_md_parts))
 
+    # Deduplicate repeated section titles (running headers detected as headings).
+    # Any title appearing on 3+ pages is treated as a running header, not a real section.
+    title_counts = Counter(s.title for s in sections)
+    seen_titles: set[str] = set()
+    deduped_sections: list[Section] = []
+    for s in sections:
+        if title_counts[s.title] >= 3 and s.title in seen_titles:
+            continue  # skip repeated running header
+        seen_titles.add(s.title)
+        deduped_sections.append(s)
+    sections = deduped_sections
+
     # Join pages with double newline
     full_markdown = "\n\n".join(md_parts).strip()
 
