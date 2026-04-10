@@ -45,11 +45,20 @@ BENCHMARK_PAPERS = [
     {
         "name": "nature-gut-adaptation",
         "path": "/Users/tmayassi/Downloads/s41586-024-08216-z.pdf",
-        "url": "",  # local file, no URL needed
+        "url": "",
         "expected_pages": 41,
         "has_tables": True,
         "has_math": False,
         "category": "nature-article",
+    },
+    {
+        "name": "dg-emi-model-math",
+        "path": "/Users/tmayassi/Downloads/2411.02646v1.pdf",
+        "url": "https://arxiv.org/pdf/2411.02646v1",
+        "expected_pages": 30,
+        "has_tables": True,
+        "has_math": True,
+        "category": "math-paper",
     },
 ]
 
@@ -71,6 +80,9 @@ class BenchmarkResult:
     time_ms: int = 0
     error: str | None = None
     markdown_length: int = 0
+    equations_found: int = 0
+    display_math_count: int = 0
+    inline_math_count: int = 0
 
 
 def _load_pdf(paper: dict, skip_errors: bool = True) -> bytes | None:
@@ -118,6 +130,11 @@ def _convert_paper(
 
     doc = pdf2md.convert(pdf_bytes, **kwargs)
 
+    # Count math in markdown
+    display_count = doc.markdown.count("$$") // 2  # pairs of $$
+    inline_count = doc.markdown.count("$") - (display_count * 4)  # subtract $$ pairs
+    inline_count = max(inline_count // 2, 0)  # pairs of $
+
     return BenchmarkResult(
         name=name,
         tier=tier,
@@ -133,6 +150,9 @@ def _convert_paper(
         confidence=doc.confidence,
         time_ms=doc.processing_time_ms,
         markdown_length=len(doc.markdown),
+        equations_found=len(doc.equations),
+        display_math_count=display_count,
+        inline_math_count=inline_count,
     )
 
 
@@ -246,6 +266,8 @@ def _print_result(result: BenchmarkResult, indent: int = 2) -> None:
     print(f"{pad}Title: {result.title[:60]}{'...' if len(result.title) > 60 else ''}")
     print(f"{pad}Sections: {result.sections_found} — {result.section_names[:5]}")
     print(f"{pad}Tables: {result.tables_found}")
+    if result.display_math_count or result.inline_math_count:
+        print(f"{pad}Math: {result.display_math_count} display + {result.inline_math_count} inline equations")
     print(f"{pad}Confidence: {result.confidence:.0%}")
     print(f"{pad}Time: {result.time_ms}ms ({result.time_ms / max(result.pages, 1):.0f}ms/page)")
     print(f"{pad}Markdown: {result.markdown_length:,} chars")
