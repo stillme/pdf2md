@@ -25,3 +25,22 @@ def test_no_metadata():
     text = "Just some random text without structure."
     meta = extract_metadata(text, pages=1)
     assert meta.pages == 1
+
+
+def test_extract_short_title():
+    text = "Mistral 7B\nAlbert Q. Jiang, Alexandre Sablayrolles\n\nAbstract\nWe introduce..."
+    meta = extract_metadata(text, pages=9)
+    assert meta.title == "Mistral 7B"
+
+
+def test_extract_title_skips_license():
+    text = "Permission is hereby granted, free of charge\nAttention Is All You Need\nAuthors\n\nAbstract"
+    meta = extract_metadata(text, pages=15)
+    assert "Attention" in meta.title
+    assert "permission" not in meta.title.lower()
+
+
+def test_extract_title_skips_affiliations():
+    text = "Department of Computer Science, MIT\nMy Great Paper Title\nJohn Smith\n\nAbstract"
+    meta = extract_metadata(text, pages=5)
+    assert meta.title == "My Great Paper Title"

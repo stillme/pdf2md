@@ -25,6 +25,25 @@ _NAME_SEGMENT = re.compile(
     r"^(?:[A-Z][a-zA-Z\-'\.]+\.?(?:\s+[A-Z][a-zA-Z\-'\.]+\.?){0,4})$"
 )
 
+# Words that indicate a line is license/copyright text — not a title
+_LICENSE_WORDS = re.compile(
+    r"\b(license|copyright|permission|granted|rights?\s+reserved|creative\s+commons)\b",
+    re.IGNORECASE,
+)
+
+# Words that indicate an institutional affiliation line — not a title
+_AFFILIATION_WORDS = re.compile(
+    r"\b(university|department|dept\.?|institute|institution|hospital|school\s+of|"
+    r"faculty|laboratory|lab\b|college|centre|center)\b",
+    re.IGNORECASE,
+)
+
+# URL / DOI line detector
+_URL_OR_DOI = re.compile(
+    r"(https?://|www\.|10\.\d{4,9}/|doi\.org)",
+    re.IGNORECASE,
+)
+
 
 def _looks_like_name(token: str) -> bool:
     """Return True if `token` looks like a person's name."""
@@ -45,20 +64,64 @@ def _looks_like_name(token: str) -> bool:
     return True
 
 
+def _is_author_line(stripped: str) -> bool:
+    """Return True if the line looks like a list of author names."""
+    normalised = re.sub(r"\s+and\s+", ", ", stripped, flags=re.IGNORECASE)
+    parts = [p.strip() for p in normalised.split(",") if p.strip()]
+    return len(parts) >= 2 and all(_looks_like_name(p) for p in parts)
+
+
+def _should_skip_as_title(stripped: str) -> bool:
+    """Return True if this line should be skipped when searching for the title."""
+    if not stripped:
+        return True
+    # Too short or too long
+    if not (5 <= len(stripped) <= 200):
+        return True
+    # Starts with lowercase — titles start with uppercase
+    if stripped[0].islower():
+        return True
+    # DOI / URL lines
+    if _URL_OR_DOI.search(stripped):
+        return True
+    # License / copyright text
+    if _LICENSE_WORDS.search(stripped):
+        return True
+    # Institutional affiliation
+    if _AFFILIATION_WORDS.search(stripped):
+        return True
+    # Author list
+    if _is_author_line(stripped):
+        return True
+    return False
+
+
 def _extract_title(lines: list[str], front_matter_end: int) -> str | None:
-    """Return the first substantial line in the front-matter block."""
+    """Return the first plausible title line in the front-matter block.
+
+    A title candidate must:
+    - Be 5–200 characters
+    - Start with an uppercase letter
+    - Not look like license/copyright text, a URL/DOI, an affiliation, or an author list
+    """
     for line in lines[:front_matter_end]:
         stripped = line.strip()
-        if len(stripped) > 10 and not stripped.lower().startswith("doi"):
+        if not _should_skip_as_title(stripped):
             return stripped
     return None
 
 
-def _extract_authors(lines: list[str], front_matter_end: int) -> list[str]:
-    """Return author list from a comma-separated names line in the front matter."""
+def _extract_authors(lines: list[str], front_matter_end: int, title: str | None = None) -> list[str]:
+    """Return author list from a comma-separated names line in the front matter.
+
+    Skips the line that was already identified as the title.
+    """
     for line in lines[:front_matter_end]:
         stripped = line.strip()
         if not stripped or len(stripped) < 5:
+            continue
+        # Skip the title line
+        if title is not None and stripped == title:
             continue
         # Normalise " and " → ", "
         normalised = re.sub(r"\s+and\s+", ", ", stripped, flags=re.IGNORECASE)
@@ -106,7 +169,7 @@ def extract_metadata(full_text: str, pages: int) -> Metadata:
     front_matter_end = _find_front_matter_end(lines)
 
     title = _extract_title(lines, front_matter_end)
-    authors = _extract_authors(lines, front_matter_end)
+    authors = _extract_authors(lines, front_matter_end, title=title)
     doi = _extract_doi(full_text)
 
     return Metadata(
