@@ -20,6 +20,7 @@ from pdf2md.providers.base import VLMProvider
 from pdf2md.providers.registry import get_provider
 from pdf2md.triage.analyzer import analyze_page
 from pdf2md.triage.router import select_engine, select_tier
+from pdf2md.verifier import run_verify_loop
 
 
 def _resolve_source(source: str | bytes) -> bytes:
@@ -206,6 +207,29 @@ def convert(
                 )
             if enhanced_tables:
                 doc = doc.model_copy(update={"tables": enhanced_tables})
+
+    # Agentic verify-correct loop for DEEP tier
+    if effective_tier_enum == Tier.DEEP and config.verify:
+        vlm_verify = _get_vlm_provider(config.provider)
+        if vlm_verify is not None:
+            corrected_pages = list(all_pages)
+            for i, page in enumerate(corrected_pages):
+                page_image = _render_page_image(pdf_bytes, page.page_number)
+                if page_image is None:
+                    continue
+                corrected_md, confidence = run_verify_loop(
+                    page_image,
+                    page.text,
+                    vlm_verify,
+                    max_rounds=config.max_verify_rounds,
+                )
+                corrected_pages[i] = page.model_copy(update={
+                    "text": corrected_md,
+                    "confidence": max(page.confidence, confidence),
+                })
+            # Reassemble with corrected pages
+            all_pages = corrected_pages
+            doc = assemble_markdown(all_pages)
 
     # Stamp tier and timing
     elapsed_ms = int((time.monotonic() - t0) * 1000)
