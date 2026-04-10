@@ -74,21 +74,24 @@ def convert(source, output, tier, figures, provider, verify, json_out):
 @click.option("--max-papers", default=None, type=int, help="Limit number of papers")
 @click.option("--compare", is_flag=True, help="Compare all tiers side by side")
 @click.option("--provider", default=None, help="VLM provider for standard/deep tiers")
-def benchmark(tier, max_papers, compare, provider):
+@click.option("-o", "--output-dir", default=None, help="Save markdown, JSON, and figures per paper")
+def benchmark(tier, max_papers, compare, provider, output_dir):
     """Run benchmarks on real open-access papers.
 
     Use --compare to run each paper through fast, standard, and deep tiers.
-    Requires a VLM provider (set via --provider or API key env vars).
+    Use -o/--output-dir to save full outputs (markdown, JSON, figures) per paper.
     """
     from pdf2md.benchmarks.runner import run_benchmarks, run_tier_comparison, print_summary
 
     if compare:
         click.echo("Running pdf2md tier comparison benchmark...")
-        results = run_tier_comparison(max_papers=max_papers, provider=provider)
+        results = run_tier_comparison(max_papers=max_papers, provider=provider, output_dir=output_dir)
     else:
         click.echo(f"Running pdf2md benchmarks (tier={tier})...")
-        results = run_benchmarks(tier=tier, max_papers=max_papers, provider=provider)
+        results = run_benchmarks(tier=tier, max_papers=max_papers, provider=provider, output_dir=output_dir)
     print_summary(results)
+    if output_dir:
+        click.echo(f"\nOutputs saved to: {output_dir}/")
 
 
 @main.command()

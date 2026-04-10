@@ -118,9 +118,11 @@ def _load_pdf(paper: dict, skip_errors: bool = True) -> bytes | None:
 
 def _convert_paper(
     name: str, pdf_bytes: bytes, paper: dict, tier: str, provider: str | None = None,
+    output_dir: str | None = None,
 ) -> BenchmarkResult:
-    """Convert a single paper and return the result."""
+    """Convert a single paper and return the result. Optionally save outputs."""
     import pdf2md
+    from pathlib import Path
 
     kwargs = {"tier": tier}
     if provider:
@@ -129,6 +131,19 @@ def _convert_paper(
         kwargs["figures"] = "describe"
 
     doc = pdf2md.convert(pdf_bytes, **kwargs)
+
+    # Save outputs if output_dir specified
+    if output_dir:
+        out = Path(output_dir)
+        out.mkdir(parents=True, exist_ok=True)
+        suffix = f"-{tier}" if tier != "fast" else ""
+        doc.save_markdown(str(out / f"{name}{suffix}.md"))
+        doc.save_json(str(out / f"{name}{suffix}.json"))
+        # Save figures to subdirectory
+        fig_dir = out / f"{name}{suffix}-figures"
+        if doc.figures and any(f.image_base64 for f in doc.figures):
+            doc.save_figures(str(fig_dir))
+        print(f"  Saved: {out / name}{suffix}.md, .json" + (f", {len(doc.figures)} figures" if doc.figures else ""))
 
     # Count math in markdown
     display_count = doc.markdown.count("$$") // 2  # pairs of $$
@@ -162,6 +177,7 @@ def run_benchmarks(
     max_papers: int | None = None,
     skip_download_errors: bool = True,
     provider: str | None = None,
+    output_dir: str | None = None,
 ) -> list[BenchmarkResult]:
     """Run pdf2md on benchmark papers and collect results."""
     if papers is None:
@@ -192,7 +208,7 @@ def run_benchmarks(
             continue
 
         try:
-            result = _convert_paper(name, pdf_bytes, paper, tier, provider)
+            result = _convert_paper(name, pdf_bytes, paper, tier, provider, output_dir)
             results.append(result)
             _print_result(result)
         except Exception as e:
@@ -207,6 +223,7 @@ def run_tier_comparison(
     tiers: list[str] | None = None,
     max_papers: int | None = None,
     provider: str | None = None,
+    output_dir: str | None = None,
 ) -> list[BenchmarkResult]:
     """Run each paper through multiple tiers and compare results side by side."""
     if papers is None:
@@ -239,7 +256,7 @@ def run_tier_comparison(
         for tier in tiers:
             print(f"\n  --- {tier.upper()} tier ---")
             try:
-                result = _convert_paper(f"{name}", pdf_bytes, paper, tier, provider)
+                result = _convert_paper(f"{name}", pdf_bytes, paper, tier, provider, output_dir)
                 result.tier = tier  # tag with tier for comparison
                 results.append(result)
                 _print_result(result, indent=4)
