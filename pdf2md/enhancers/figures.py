@@ -3,11 +3,32 @@
 from __future__ import annotations
 
 import base64
+from io import BytesIO
 from pathlib import Path
+
+from PIL import Image
 
 from pdf2md.config import FigureMode
 from pdf2md.document import Figure
 from pdf2md.providers.base import VLMProvider
+
+MAX_VLM_IMAGE_PIXELS = 1500  # max dimension for VLM input
+
+
+def _resize_for_vlm(image_bytes: bytes) -> bytes:
+    """Resize an image to fit VLM input limits, return as JPEG bytes."""
+    img = Image.open(BytesIO(image_bytes))
+    # Resize if larger than MAX_VLM_IMAGE_PIXELS on longest side
+    w, h = img.size
+    if max(w, h) > MAX_VLM_IMAGE_PIXELS:
+        ratio = MAX_VLM_IMAGE_PIXELS / max(w, h)
+        img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
+    # Convert to RGB (drop alpha) and compress as JPEG
+    if img.mode in ("RGBA", "P", "LA"):
+        img = img.convert("RGB")
+    buf = BytesIO()
+    img.save(buf, format="JPEG", quality=85)
+    return buf.getvalue()
 
 _DESCRIBE_PROMPT = """\
 Describe this scientific figure in 2-3 sentences. Focus on:
@@ -65,8 +86,17 @@ def _describe_figures(
         # Decode image for VLM
         image_bytes = base64.b64decode(fig.image_base64)
 
-        # Get VLM description
-        description = provider.complete_sync(_DESCRIBE_PROMPT, image=image_bytes)
+        # Resize for VLM input limits and get description (non-fatal on error)
+        try:
+            try:
+                vlm_image = _resize_for_vlm(image_bytes)
+            except Exception:
+                vlm_image = image_bytes  # fallback to original if resize fails
+            description = provider.complete_sync(_DESCRIBE_PROMPT, image=vlm_image)
+        except Exception as e:
+            print(f"  VLM figure description failed for {fig.id}: {e}")
+            results.append(fig)
+            continue
 
         updates: dict = {"description": description}
 

@@ -22,7 +22,9 @@ class OpenAIProvider:
         content: list[dict] = []
         if image is not None:
             encoded = base64.b64encode(image).decode("utf-8")
-            data_url = f"data:image/png;base64,{encoded}"
+            from pdf2md.providers.base import detect_image_mime
+            mime = detect_image_mime(image)
+            data_url = f"data:{mime};base64,{encoded}"
             content.append({
                 "type": "image_url",
                 "image_url": {"url": data_url},

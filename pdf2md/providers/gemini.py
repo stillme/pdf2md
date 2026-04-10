@@ -22,9 +22,10 @@ class GeminiProvider:
         parts: list[dict] = []
         if image is not None:
             encoded = base64.b64encode(image).decode("utf-8")
+            from pdf2md.providers.base import detect_image_mime
             parts.append({
                 "inline_data": {
-                    "mime_type": "image/png",
+                    "mime_type": detect_image_mime(image),
                     "data": encoded,
                 }
             })

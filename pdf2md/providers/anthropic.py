@@ -22,12 +22,13 @@ class AnthropicProvider:
     def _build_payload(self, prompt: str, image: bytes | None) -> dict:
         content: list[dict] = []
         if image is not None:
+            from pdf2md.providers.base import detect_image_mime
             encoded = base64.b64encode(image).decode("utf-8")
             content.append({
                 "type": "image",
                 "source": {
                     "type": "base64",
-                    "media_type": "image/png",
+                    "media_type": detect_image_mime(image),
                     "data": encoded,
                 },
             })
