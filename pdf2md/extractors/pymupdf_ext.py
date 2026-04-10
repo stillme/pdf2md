@@ -189,6 +189,8 @@ class PymupdfExtractor:
                     if "," in line_text and line_text.count(",") >= 2:
                         continue
 
+                    words = line_text.split()
+
                     # Reject person-name-like lines (2-3 capitalized words, no
                     # section keywords) — catches single author names like
                     # "William El Sayed" at near-body-size bold
@@ -207,7 +209,6 @@ class PymupdfExtractor:
                     if "✉" in line_text or "@" in line_text:
                         continue
 
-                    words = line_text.split()
                     if len(words) == 1 and len(line_text) < 4:
                         continue
 
