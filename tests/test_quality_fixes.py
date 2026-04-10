@@ -10,18 +10,19 @@ from pdf2md.extractors.base import PageContent
 
 class TestSoftHyphenRemoval:
 
-    def test_removes_uffbe_character(self):
+    def test_replaces_uffbe_with_hyphen(self):
+        """Inline U+FFBE should become a regular hyphen (compound word)."""
         text = "microbiota\uffbedriven adaptation"
         result = _clean_hyphens(text)
         assert "\uffbe" not in result
-        assert "microbiotadriven" in result
+        assert "microbiota-driven" in result
 
-    def test_removes_ufffe_character(self):
-        """U+FFFE is used by some PDF extractors for soft hyphens."""
+    def test_replaces_ufffe_with_hyphen(self):
+        """Inline U+FFFE should become a regular hyphen (compound word)."""
         text = "microbiota\ufffedriven adaptation"
         result = _clean_hyphens(text)
         assert "\ufffe" not in result
-        assert "microbiotadriven" in result
+        assert "microbiota-driven" in result
 
     def test_removes_soft_hyphen_char(self):
         text = "micro\xadbiota"
@@ -29,12 +30,14 @@ class TestSoftHyphenRemoval:
         assert "\xad" not in result
         assert "microbiota" in result
 
-    def test_rejoins_uffbe_across_lines(self):
+    def test_rejoins_uffbe_compound_across_lines(self):
+        """Compound word at line break with U+FFBE keeps the hyphen."""
         text = "microbiota\uffbe\ndriven adaptation"
         result = _clean_hyphens(text)
-        assert "microbiotadriven" in result
+        assert "microbiota-driven" in result
 
-    def test_rejoins_ufffe_across_lines(self):
+    def test_rejoins_ufffe_prefix_across_lines(self):
+        """Combining prefix at line break with U+FFFE joins without hyphen."""
         text = "inte\ufffe\ngration of signals"
         result = _clean_hyphens(text)
         assert "integration" in result

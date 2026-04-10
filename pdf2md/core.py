@@ -17,6 +17,7 @@ from pdf2md.enhancers.figures import enhance_figures
 from pdf2md.enhancers.math import convert_unicode_math, detect_math_regions, extract_equations_vlm
 from pdf2md.enhancers.metadata import extract_metadata
 from pdf2md.enhancers.tables import enhance_table
+from pdf2md.enhancers.superscripts import detect_superscripts
 from pdf2md.enhancers.text_cleaner import clean_figure_text
 from pdf2md.extractors import get_available_extractors, get_extractor_by_name
 from pdf2md.extractors.base import PageContent, RawFigure
@@ -239,6 +240,11 @@ def convert(
 
     # Store panel references as metadata (available via doc internals)
     _panel_refs = extract_panel_references(doc.markdown)
+
+    # Superscript detection: wrap inline citation refs and affiliations
+    doc = doc.model_copy(update={
+        "markdown": detect_superscripts(doc.markdown),
+    })
 
     # Math enhancement (all tiers): convert Unicode math symbols to LaTeX
     doc = doc.model_copy(update={

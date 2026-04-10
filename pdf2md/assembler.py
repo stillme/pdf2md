@@ -125,18 +125,84 @@ def _clean_hyphens(text: str) -> str:
 
     PDF two-column layouts produce soft hyphens when words break across lines.
     These appear as U+00AD (soft hyphen), U+FFBE, or U+FFFE in extracted text.
+
+    For regular ASCII hyphens at line breaks, we distinguish between:
+    - Combining-form prefixes (immuno-, physio-) → join without hyphen
+    - Compound words (microbiota-driven, region-enriched) → keep hyphen
     """
     # Remove soft hyphen character (U+00AD)
     text = text.replace('\xad', '')
     # Rejoin words split by replacement chars across line breaks
-    # (must come BEFORE the plain replace to capture the line-break pattern)
-    text = re.sub(r'(\w)[\uffbe\ufffe]\s*\n\s*(\w)', r'\1\2', text)
-    # Remove remaining replacement characters used for hyphens
-    text = text.replace('\uffbe', '')
-    text = text.replace('\ufffe', '')
-    # Rejoin standard hyphenated line breaks (word- \n continuation)
-    text = re.sub(r'(\w)-\s*\n\s*(\w)', r'\1\2', text)
+    # Uses the same prefix/suffix awareness as regular hyphens
+    text = re.sub(r'(\w+)[\uffbe\ufffe]\s*\n\s*(\w+)', _rejoin_hyphen, text)
+    # Replace remaining inline replacement characters with hyphens
+    # (they represent the original hyphen when not at a line break)
+    text = text.replace('\uffbe', '-')
+    text = text.replace('\ufffe', '-')
+    # Rejoin standard hyphenated line breaks — prefix/suffix-aware
+    text = re.sub(r'(\w+)-\s*\n\s*(\w+)', _rejoin_hyphen, text)
     return text
+
+
+# Latin/Greek combining forms that always join without a hyphen in English.
+# "immuno-\nlogical" → "immunological" (immuno is a combining form).
+_COMBINING_PREFIXES = frozenset({
+    'bio', 'cardio', 'chemo', 'cryo', 'cyto', 'electro', 'endo', 'exo',
+    'fibro', 'gastro', 'glyco', 'haemo', 'hemo', 'hepato', 'hetero',
+    'histo', 'homo', 'hydro', 'immuno', 'iso', 'kerato', 'lipo',
+    'lympho', 'macro', 'mega', 'meso', 'meta', 'micro', 'morpho',
+    'muco', 'myelo', 'myo', 'nano', 'necro', 'neo', 'nephro', 'neuro',
+    'nucleo', 'oligo', 'onco', 'ortho', 'osteo', 'oto', 'patho',
+    'peri', 'pharma', 'physio', 'pneumo', 'proto', 'pseudo', 'psycho',
+    'pyro', 'radio', 'reno', 'retro', 'rhino', 'sarco', 'sero',
+    'socio', 'supra', 'techno', 'tele', 'thermo', 'thrombo', 'topo',
+    'vaso', 'xeno',
+})
+
+# Common suffix-start patterns that indicate the second part continues a
+# single word rather than being a standalone compound-word element.
+# "environ-\nmental" → "ment..." suffix → join → "environmental"
+# "microbiota-\ndriven" → "driv..." not a suffix → keep → "microbiota-driven"
+_SUFFIX_STARTS = (
+    'ment', 'tion', 'sion', 'ness', 'ible', 'able', 'ence', 'ance',
+    'ical', 'ular', 'ally', 'ling', 'ious', 'eous', 'ation',
+    'ity', 'ous', 'ive', 'ful', 'ize', 'ise', 'ial', 'ory', 'ary',
+    'ery', 'ure', 'age', 'ism', 'ist', 'ate', 'ing', 'ual', 'tic',
+    'ent', 'ant',
+)
+
+# Suffix patterns at the END of the second word that indicate it's a
+# continuation, not a standalone word. Catches cases like "inte-\ngration"
+# where "gration" ends with "-tion" (clearly a suffix continuation) but
+# doesn't START with a recognized suffix pattern.
+# Excludes generic endings (-ed, -en, -er, -ing) that also appear in
+# standalone compound-word elements (enriched, driven, expressing).
+_SUFFIX_ENDS = (
+    'tion', 'sion', 'ment', 'ness', 'ence', 'ance', 'ible', 'able',
+    'ious', 'eous', 'ical', 'ular', 'ally', 'ity', 'ive', 'ize',
+    'ise', 'ory', 'ary', 'ery', 'ure', 'ism', 'ist', 'ual', 'tic',
+)
+
+
+def _rejoin_hyphen(m: re.Match) -> str:
+    """Rejoin words split by a hyphen across a line break.
+
+    Four checks in order:
+    1. If the first part is a combining prefix → join (immunological)
+    2. If the second part starts with a suffix pattern → join (environmental)
+    3. If the second part ends with a suffix pattern → join (integration)
+    4. Otherwise keep the hyphen — it's a compound word (microbiota-driven)
+    """
+    before = m.group(1)
+    after = m.group(2)
+    after_lower = after.lower()
+    if before.lower() in _COMBINING_PREFIXES:
+        return f'{before}{after}'
+    if after_lower.startswith(_SUFFIX_STARTS):
+        return f'{before}{after}'
+    if after_lower.endswith(_SUFFIX_ENDS):
+        return f'{before}{after}'
+    return f'{before}-{after}'
 
 
 # Journal header pattern (Nature and similar)
