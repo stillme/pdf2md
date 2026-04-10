@@ -1,0 +1,108 @@
+"""Shared test fixtures for pdf2md."""
+
+import pytest
+from pathlib import Path
+from io import BytesIO
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
+
+
+def generate_sample_pdf() -> bytes:
+    """Generate a minimal PDF with text, a table, and two pages."""
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib import colors
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak,
+    )
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import inch
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=letter)
+    styles = getSampleStyleSheet()
+    story = []
+
+    # Title
+    story.append(Paragraph("Sample Research Paper", styles["Title"]))
+    story.append(Spacer(1, 0.3 * inch))
+
+    # Section 1
+    story.append(Paragraph("Introduction", styles["Heading1"]))
+    story.append(Paragraph(
+        "This is the introduction section of the sample paper. "
+        "It contains background information about the research topic. "
+        "The study investigates the relationship between variables A and B.",
+        styles["Normal"],
+    ))
+    story.append(Spacer(1, 0.2 * inch))
+
+    # Section 2 with table
+    story.append(Paragraph("Results", styles["Heading1"]))
+    story.append(Paragraph(
+        "Table 1 shows the experimental results across three conditions.",
+        styles["Normal"],
+    ))
+    story.append(Spacer(1, 0.1 * inch))
+
+    table_data = [
+        ["Condition", "Mean", "SD", "p-value"],
+        ["Control", "12.3", "2.1", "-"],
+        ["Treatment A", "18.7", "3.4", "0.002"],
+        ["Treatment B", "15.1", "2.8", "0.041"],
+    ]
+    t = Table(table_data, colWidths=[1.5 * inch, 1 * inch, 1 * inch, 1 * inch])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+        ("GRID", (0, 0), (-1, -1), 1, colors.black),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 0.2 * inch))
+
+    # Page 2
+    story.append(PageBreak())
+    story.append(Paragraph("Discussion", styles["Heading1"]))
+    story.append(Paragraph(
+        "The results demonstrate a significant effect of Treatment A "
+        "on the measured outcome. Treatment B showed a more modest effect. "
+        "These findings are consistent with prior work by Smith et al.",
+        styles["Normal"],
+    ))
+    story.append(Spacer(1, 0.2 * inch))
+
+    # References
+    story.append(Paragraph("References", styles["Heading1"]))
+    story.append(Paragraph(
+        "1. Smith J, Doe A. Effects of treatment on outcomes. "
+        "Journal of Example Studies. 2024;12(3):45-52.",
+        styles["Normal"],
+    ))
+    story.append(Paragraph(
+        "2. Johnson B, Williams C. A meta-analysis of interventions. "
+        "Annual Review of Research. 2023;8:100-115.",
+        styles["Normal"],
+    ))
+
+    doc.build(story)
+    return buf.getvalue()
+
+
+@pytest.fixture(scope="session")
+def sample_pdf_path(tmp_path_factory) -> Path:
+    pdf_bytes = generate_sample_pdf()
+    p = tmp_path_factory.mktemp("pdfs") / "sample.pdf"
+    p.write_bytes(pdf_bytes)
+    return p
+
+
+@pytest.fixture(scope="session")
+def sample_pdf_bytes() -> bytes:
+    return generate_sample_pdf()
+
+
+@pytest.fixture
+def mock_vlm_response():
+    def _make(content: str = "A figure showing experimental results."):
+        return content
+    return _make
