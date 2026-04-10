@@ -13,6 +13,7 @@ from pdf2md.assembler import assemble_markdown
 from pdf2md.config import Config, FigureMode, Tier
 from pdf2md.document import Document
 from pdf2md.enhancers.figures import enhance_figures
+from pdf2md.enhancers.math import convert_unicode_math, detect_math_regions, extract_equations_vlm
 from pdf2md.enhancers.metadata import extract_metadata
 from pdf2md.enhancers.tables import enhance_table
 from pdf2md.extractors import get_available_extractors, get_extractor_by_name
@@ -189,6 +190,11 @@ def convert(
     })
     doc = doc.model_copy(update={"metadata": updated_meta})
 
+    # Math enhancement (all tiers): convert Unicode math symbols to LaTeX
+    doc = doc.model_copy(update={
+        "markdown": convert_unicode_math(doc.markdown),
+    })
+
     # VLM enhancement for STANDARD and DEEP tiers
     effective_tier_enum = config.tier
     if effective_tier_enum == Tier.AUTO and num_pages > 0:
@@ -218,6 +224,25 @@ def convert(
                 )
             if enhanced_tables:
                 doc = doc.model_copy(update={"tables": enhanced_tables})
+
+            # VLM equation extraction on math-heavy pages
+            all_equations = list(doc.equations)
+            for page_idx_eq in range(num_pages):
+                page_text = all_pages[page_idx_eq].text
+                if not detect_math_regions(page_text):
+                    continue
+                page_image = _render_page_image(pdf_bytes, page_idx_eq)
+                if page_image is None:
+                    continue
+                eqs = extract_equations_vlm(
+                    page_image=page_image,
+                    page_text=page_text,
+                    provider=vlm,
+                    page_number=page_idx_eq,
+                )
+                all_equations.extend(eqs)
+            if all_equations:
+                doc = doc.model_copy(update={"equations": all_equations})
 
     # Agentic verify-correct loop for DEEP tier
     if effective_tier_enum == Tier.DEEP and config.verify:
