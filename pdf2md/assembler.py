@@ -226,11 +226,18 @@ def assemble_markdown(
             heading_info = _is_heading(stripped)
 
             # If regex didn't detect a heading, check if this line matches
-            # a bold heading for this page
+            # a bold heading for this page (fuzzy: substring match)
             if heading_info is None and page_bold_texts:
                 for bold_text in page_bold_texts:
                     if bold_text in stripped or stripped in bold_text:
-                        heading_info = {"text": bold_text, "level": 1}
+                        # Check if this bold heading was already found by regex
+                        # (e.g., regex found "1 Introduction", bold found "Introduction")
+                        already_found = any(
+                            bold_text in existing or existing in bold_text
+                            for existing in regex_heading_titles
+                        )
+                        if not already_found:
+                            heading_info = {"text": bold_text, "level": 1}
                         break
 
             if heading_info is not None:
@@ -268,10 +275,12 @@ def assemble_markdown(
             ))
 
         # Add bold headings that weren't matched to any text line on this page.
-        # This handles cases where the bold heading text doesn't appear as a
-        # standalone line in the extracted text.
         for bold_text in page_bold_texts:
-            if bold_text not in regex_heading_titles:
+            already_found = any(
+                bold_text in existing or existing in bold_text
+                for existing in regex_heading_titles
+            )
+            if not already_found:
                 regex_heading_titles.add(bold_text)
                 sections.append(Section(
                     level=1,

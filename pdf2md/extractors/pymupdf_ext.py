@@ -96,18 +96,39 @@ class PymupdfExtractor:
 
         Returns list of dicts: {"text": str, "page": int, "font_size": float}
 
-        Heuristic: a bold span is a heading candidate if:
-        - It's on its own line (not inline bold within a paragraph)
-        - It's 3-80 chars
-        - It starts with uppercase
-        - It doesn't look like an author name (no commas with multiple segments)
-        - It's not a number or superscript annotation
+        Two-pass approach:
+        1. First pass: determine the dominant body text font size
+        2. Second pass: collect bold text that is LARGER than body text
+        This prevents author names, table headers, and inline bold from
+        being detected as headings.
         """
         try:
             doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
         except Exception as e:
             raise ValueError(f"Invalid PDF: {e}") from e
 
+        # Pass 1: find dominant body text size (most common non-bold font size)
+        size_counts: dict[float, int] = {}
+        for page_idx in range(min(len(doc), 10)):  # sample first 10 pages
+            page = doc[page_idx]
+            page_dict = page.get_text("dict")
+            for block in page_dict.get("blocks", []):
+                if block.get("type", 0) != 0:
+                    continue
+                for line in block.get("lines", []):
+                    for span in line.get("spans", []):
+                        flags = span.get("flags", 0)
+                        is_bold = bool(flags & (1 << 4))
+                        font_name = span.get("font", "")
+                        if not is_bold and "Bold" not in font_name:
+                            size = round(span.get("size", 0), 1)
+                            text = span.get("text", "").strip()
+                            if len(text) > 10:  # only count substantial text
+                                size_counts[size] = size_counts.get(size, 0) + len(text)
+
+        body_size = max(size_counts, key=size_counts.get) if size_counts else 10.0
+
+        # Pass 2: collect bold headings larger than body text
         headings: list[dict] = []
 
         for page_idx in range(len(doc)):
@@ -115,7 +136,6 @@ class PymupdfExtractor:
             page_dict = page.get_text("dict")
 
             for block in page_dict.get("blocks", []):
-                # Only text blocks (type 0), not images (type 1)
                 if block.get("type", 0) != 0:
                     continue
 
@@ -124,45 +144,77 @@ class PymupdfExtractor:
                     if not spans:
                         continue
 
-                    # Build the full line text from all spans
                     line_text = "".join(s.get("text", "") for s in spans).strip()
 
-                    # Length filter: 3-80 chars
                     if len(line_text) < 3 or len(line_text) > 80:
                         continue
 
-                    # Check if the first span is bold
-                    # PyMuPDF flags: bit 4 (value 16) = bold
                     first_span = spans[0]
                     flags = first_span.get("flags", 0)
                     is_bold = bool(flags & (1 << 4))
-
-                    # Also check font name for "Bold" or "Semibold" as fallback
                     font_name = first_span.get("font", "")
                     if not is_bold:
-                        is_bold = "Bold" in font_name or "Semibold" in font_name
+                        is_bold = "Bold" in font_name
 
                     if not is_bold:
                         continue
 
-                    # Must start with uppercase letter
+                    font_size = float(first_span.get("size", 0.0))
+
+                    # Key filter: must be larger than body text OR same size
+                    # but with a heading-like font (e.g., Nature uses same-size bold)
+                    # Allow same-size bold only if the text looks like a heading
+                    # (not a URL, not an author list, not a figure caption)
+                    if font_size < body_size - 0.5:
+                        continue  # smaller than body = definitely not a heading
+
                     if not line_text[0].isupper():
                         continue
 
-                    # Reject pure numbers / superscript annotations
                     if _SUPERSCRIPT_RE.match(line_text):
                         continue
 
-                    # Reject author-like lines
                     if _AUTHOR_RE.match(line_text):
                         continue
 
-                    # Reject single short words (< 4 chars, likely labels)
+                    # Reject URLs
+                    if "http" in line_text.lower() or "www." in line_text.lower():
+                        continue
+
+                    # Reject figure/table captions (start with "Fig." or "Table")
+                    if re.match(r"^(Fig\.|Figure|Table|Extended Data)", line_text):
+                        continue
+
+                    # Reject lines with commas that look like author affiliations
+                    if "," in line_text and line_text.count(",") >= 2:
+                        continue
+
+                    # Reject person-name-like lines (2-3 capitalized words, no
+                    # section keywords) — catches single author names like
+                    # "William El Sayed" at near-body-size bold
+                    if (font_size <= body_size + 1.0
+                            and 2 <= len(words) <= 4
+                            and all(w[0].isupper() for w in words if w[0].isalpha())
+                            and not any(w.lower() in {
+                                "abstract", "introduction", "methods", "results",
+                                "discussion", "conclusions", "references",
+                                "acknowledgements", "online", "content",
+                            } for w in words)):
+                        # Likely a person name, not a heading
+                        continue
+
+                    # Reject lines with email-like patterns or special chars
+                    if "✉" in line_text or "@" in line_text:
+                        continue
+
                     words = line_text.split()
                     if len(words) == 1 and len(line_text) < 4:
                         continue
 
-                    font_size = float(first_span.get("size", 0.0))
+                    # For same-size-as-body bold, be stricter: require short text
+                    # (real headings at body size are typically 2-6 words)
+                    if font_size <= body_size + 0.5 and len(words) > 8:
+                        continue
 
                     headings.append({
                         "text": line_text,
