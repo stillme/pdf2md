@@ -72,12 +72,22 @@ def convert(source, output, tier, figures, provider, verify, json_out):
 @main.command()
 @click.option("--tier", default="fast", type=click.Choice(["fast", "standard", "deep"]))
 @click.option("--max-papers", default=None, type=int, help="Limit number of papers")
-def benchmark(tier, max_papers):
-    """Run benchmarks on real open-access papers."""
-    from pdf2md.benchmarks.runner import run_benchmarks, print_summary
+@click.option("--compare", is_flag=True, help="Compare all tiers side by side")
+@click.option("--provider", default=None, help="VLM provider for standard/deep tiers")
+def benchmark(tier, max_papers, compare, provider):
+    """Run benchmarks on real open-access papers.
 
-    click.echo(f"Running pdf2md benchmarks (tier={tier})...")
-    results = run_benchmarks(tier=tier, max_papers=max_papers)
+    Use --compare to run each paper through fast, standard, and deep tiers.
+    Requires a VLM provider (set via --provider or API key env vars).
+    """
+    from pdf2md.benchmarks.runner import run_benchmarks, run_tier_comparison, print_summary
+
+    if compare:
+        click.echo("Running pdf2md tier comparison benchmark...")
+        results = run_tier_comparison(max_papers=max_papers, provider=provider)
+    else:
+        click.echo(f"Running pdf2md benchmarks (tier={tier})...")
+        results = run_benchmarks(tier=tier, max_papers=max_papers, provider=provider)
     print_summary(results)
 
 
