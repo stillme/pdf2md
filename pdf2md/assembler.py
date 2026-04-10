@@ -168,9 +168,26 @@ def _remove_table_text_from_lines(lines: list[str], table_cells: set[str]) -> li
     return cleaned
 
 
-def assemble_markdown(pages: list[PageContent]) -> Document:
-    """Assemble extracted page content into a structured Document."""
+def assemble_markdown(
+    pages: list[PageContent],
+    bold_headings: list[dict] | None = None,
+) -> Document:
+    """Assemble extracted page content into a structured Document.
+
+    Args:
+        pages: Extracted page content from PDF.
+        bold_headings: Optional list of bold heading dicts from PyMuPDF with
+            keys "text", "page", "font_size". Used as additional heading markers
+            for journals (e.g. Nature) that use bold text for section headings.
+    """
     repeated_lines = _detect_repeated_lines(pages)
+
+    # Build a lookup of bold headings per page for fast access
+    bold_headings_by_page: dict[int, list[str]] = {}
+    if bold_headings:
+        for bh in bold_headings:
+            pg = bh["page"]
+            bold_headings_by_page.setdefault(pg, []).append(bh["text"])
 
     md_parts: list[str] = []
     sections: list[Section] = []
@@ -180,6 +197,9 @@ def assemble_markdown(pages: list[PageContent]) -> Document:
 
     table_counter = 0
     figure_counter = 0
+
+    # Track all heading titles found by regex so bold headings can skip duplicates
+    regex_heading_titles: set[str] = set()
 
     for page in pages:
         page_confidences.append(page.confidence)
@@ -198,10 +218,23 @@ def assemble_markdown(pages: list[PageContent]) -> Document:
         current_heading_level: int = 1
         current_content_lines: list[str] = []
 
+        # Get bold heading texts for this page
+        page_bold_texts = bold_headings_by_page.get(page.page_number, [])
+
         for line in page_lines:
             stripped = line.strip()
             heading_info = _is_heading(stripped)
+
+            # If regex didn't detect a heading, check if this line matches
+            # a bold heading for this page
+            if heading_info is None and page_bold_texts:
+                for bold_text in page_bold_texts:
+                    if bold_text in stripped or stripped in bold_text:
+                        heading_info = {"text": bold_text, "level": 1}
+                        break
+
             if heading_info is not None:
+                regex_heading_titles.add(heading_info["text"])
                 # Flush previous section
                 if current_heading is not None:
                     content = "\n".join(current_content_lines).strip()
@@ -233,6 +266,20 @@ def assemble_markdown(pages: list[PageContent]) -> Document:
                 content=content,
                 page=page.page_number,
             ))
+
+        # Add bold headings that weren't matched to any text line on this page.
+        # This handles cases where the bold heading text doesn't appear as a
+        # standalone line in the extracted text.
+        for bold_text in page_bold_texts:
+            if bold_text not in regex_heading_titles:
+                regex_heading_titles.add(bold_text)
+                sections.append(Section(
+                    level=1,
+                    title=bold_text,
+                    content="",
+                    page=page.page_number,
+                ))
+                page_md_parts.append(f"\n## {bold_text}\n")
 
         # Add tables from this page
         for raw_table in page.tables:

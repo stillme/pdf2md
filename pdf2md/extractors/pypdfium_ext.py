@@ -70,6 +70,23 @@ class PypdfiumExtractor:
             confidence=confidence,
         )
 
+    def render_page(self, pdf_bytes: bytes, page_number: int, dpi: int = 150) -> bytes:
+        """Render a full page as PNG. Used as figure fallback when individual images can't be extracted."""
+        from io import BytesIO
+        pdf = pdfium.PdfDocument(pdf_bytes)
+        if page_number < 0 or page_number >= len(pdf):
+            pdf.close()
+            raise ValueError(f"Page {page_number} out of range (0-{len(pdf) - 1})")
+        page = pdf[page_number]
+        scale = dpi / 72
+        bitmap = page.render(scale=scale)
+        pil_image = bitmap.to_pil()
+        page.close()
+        pdf.close()
+        buf = BytesIO()
+        pil_image.save(buf, format="PNG")
+        return buf.getvalue()
+
     def _extract_images(self, page: pdfium.PdfPage) -> list[RawFigure]:
         figures = []
         try:

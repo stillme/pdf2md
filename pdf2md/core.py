@@ -17,7 +17,7 @@ from pdf2md.enhancers.math import convert_unicode_math, detect_math_regions, ext
 from pdf2md.enhancers.metadata import extract_metadata
 from pdf2md.enhancers.tables import enhance_table
 from pdf2md.extractors import get_available_extractors, get_extractor_by_name
-from pdf2md.extractors.base import PageContent
+from pdf2md.extractors.base import PageContent, RawFigure
 from pdf2md.providers.base import VLMProvider
 from pdf2md.providers.registry import get_provider
 from pdf2md.triage.analyzer import analyze_page
@@ -177,8 +177,43 @@ def convert(
 
         all_pages.append(page_content)
 
+    # Extract bold headings and enhanced figures if PyMuPDF is available
+    bold_headings: list[dict] | None = None
+    try:
+        from pdf2md.extractors.pymupdf_ext import PymupdfExtractor
+        pymupdf_ext = PymupdfExtractor()
+
+        # Bold heading detection for journals like Nature
+        bold_headings = pymupdf_ext.extract_bold_headings(pdf_bytes)
+
+        # Enhanced figure extraction with size filtering
+        pymupdf_figures = pymupdf_ext.extract_figures(pdf_bytes)
+        if pymupdf_figures:
+            # Build a set of pages that already have figures from the primary extractor
+            pages_with_figures = {
+                p.page_number
+                for p in all_pages
+                if p.figures
+            }
+            for fig_info in pymupdf_figures:
+                fig_page = fig_info["page"]
+                if fig_page < len(all_pages) and fig_page not in pages_with_figures:
+                    all_pages[fig_page] = all_pages[fig_page].model_copy(
+                        update={
+                            "figures": all_pages[fig_page].figures + [
+                                RawFigure(
+                                    image_bytes=fig_info["image_bytes"],
+                                    caption=None,
+                                    bbox=None,
+                                )
+                            ]
+                        }
+                    )
+    except ImportError:
+        pass
+
     # Assemble into Document
-    doc = assemble_markdown(all_pages)
+    doc = assemble_markdown(all_pages, bold_headings=bold_headings)
 
     # Enhance metadata: extract title, authors, DOI from assembled text
     full_text = "\n".join(p.text for p in all_pages)
@@ -265,7 +300,7 @@ def convert(
                 })
             # Reassemble with corrected pages
             all_pages = corrected_pages
-            doc = assemble_markdown(all_pages)
+            doc = assemble_markdown(all_pages, bold_headings=bold_headings)
 
             # Re-extract metadata lost during reassembly
             full_text_corrected = "\n".join(p.text for p in all_pages)

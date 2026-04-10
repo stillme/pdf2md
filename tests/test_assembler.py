@@ -182,3 +182,60 @@ def test_repeated_headers_deduped():
     titles = [s.title for s in result.sections]
     # "DG FOR THE EMI MODEL" should appear at most once
     assert titles.count("DG FOR THE EMI MODEL") <= 1
+
+
+# --- Bold heading detection ---
+
+def test_bold_headings_used():
+    """Bold headings passed to assemble_markdown should become sections."""
+    pages = [
+        PageContent(
+            page_number=0,
+            text="Some text about the spatial transcriptome.",
+            tables=[], figures=[], confidence=0.9,
+        ),
+        PageContent(
+            page_number=1,
+            text="More text about robustness.",
+            tables=[], figures=[], confidence=0.9,
+        ),
+    ]
+    bold_headings = [
+        {"text": "Constructing the spatial transcriptome", "page": 0, "font_size": 8.2},
+        {"text": "The intestinal landscape is robust", "page": 1, "font_size": 8.2},
+    ]
+    result = assemble_markdown(pages, bold_headings=bold_headings)
+    titles = [s.title for s in result.sections]
+    assert "Constructing the spatial transcriptome" in titles
+    assert "The intestinal landscape is robust" in titles
+
+
+def test_bold_headings_no_duplicates_with_regex():
+    """Bold headings that match existing regex headings should not create duplicates."""
+    pages = [
+        PageContent(
+            page_number=0,
+            text="Introduction\nSome intro text.",
+            tables=[], figures=[], confidence=0.9,
+        ),
+    ]
+    bold_headings = [
+        {"text": "Introduction", "page": 0, "font_size": 10.0},
+    ]
+    result = assemble_markdown(pages, bold_headings=bold_headings)
+    titles = [s.title for s in result.sections]
+    assert titles.count("Introduction") == 1
+
+
+def test_bold_headings_none_is_noop():
+    """Passing no bold_headings should work the same as before."""
+    pages = [
+        PageContent(
+            page_number=0,
+            text="Introduction\nSome text.",
+            tables=[], figures=[], confidence=0.9,
+        ),
+    ]
+    result_without = assemble_markdown(pages)
+    result_with = assemble_markdown(pages, bold_headings=None)
+    assert len(result_without.sections) == len(result_with.sections)
