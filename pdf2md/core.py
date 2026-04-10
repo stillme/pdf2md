@@ -13,6 +13,7 @@ from pdf2md.assembler import assemble_markdown
 from pdf2md.config import Config, FigureMode, Tier
 from pdf2md.document import Document
 from pdf2md.enhancers.figures import enhance_figures
+from pdf2md.enhancers.metadata import extract_metadata
 from pdf2md.enhancers.tables import enhance_table
 from pdf2md.extractors import get_available_extractors, get_extractor_by_name
 from pdf2md.extractors.base import PageContent
@@ -177,6 +178,16 @@ def convert(
 
     # Assemble into Document
     doc = assemble_markdown(all_pages)
+
+    # Enhance metadata: extract title, authors, DOI from assembled text
+    full_text = "\n".join(p.text for p in all_pages)
+    extracted_meta = extract_metadata(full_text, pages=num_pages)
+    updated_meta = doc.metadata.model_copy(update={
+        "title": extracted_meta.title or doc.metadata.title,
+        "authors": extracted_meta.authors or doc.metadata.authors,
+        "doi": extracted_meta.doi or doc.metadata.doi,
+    })
+    doc = doc.model_copy(update={"metadata": updated_meta})
 
     # VLM enhancement for STANDARD and DEEP tiers
     effective_tier_enum = config.tier

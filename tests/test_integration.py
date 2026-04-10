@@ -57,3 +57,9 @@ def test_full_pipeline_auto_tier(sample_pdf_bytes):
     doc = convert(sample_pdf_bytes, tier="auto")
     assert doc.metadata.pages == 2
     assert len(doc.markdown) > 100
+
+
+def test_metadata_extraction(sample_pdf_bytes):
+    doc = convert(sample_pdf_bytes, tier="fast")
+    assert doc.metadata.title is not None
+    assert "Sample" in doc.metadata.title or "Research" in doc.metadata.title
