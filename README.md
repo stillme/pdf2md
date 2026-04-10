@@ -37,6 +37,17 @@ pdf2md convert paper.pdf -o paper.md
 pdf2md convert https://arxiv.org/pdf/2301.00001.pdf --tier deep
 ```
 
+## Features
+
+- **Bold heading detection** — two-pass font analysis using PyMuPDF determines body text size, then detects bold text larger than body as headings. Catches Nature-style section headings that text-only detection misses. Filters out author names, figure captions, and URLs.
+- **Math/LaTeX conversion** — converts 60+ Unicode math symbols to LaTeX (`\nabla`, `\alpha`, `\sum`, etc.), wraps equations in `$...$` / `$$...$$` delimiters. Handles both display and inline equations.
+- **Figure extraction** — PyMuPDF extracts embedded images (200x200+ pixels) with xref dedup. pypdfium2 renders full pages as fallback. VLM descriptions available on standard/deep tiers.
+- **Table extraction** — pdfplumber table detection with optional VLM correction on standard/deep tiers.
+- **Agentic verify-correct loop** — deep tier uses a VLM to visually compare rendered PDF pages against generated markdown, then corrects errors automatically.
+- **Metadata extraction** — title, authors, DOI parsed from document structure.
+- **Numbered section detection** — recognizes patterns like "2.1 Methods" as headings.
+- **Running header dedup** — ALL CAPS headers repeated on every page are collapsed to a single occurrence.
+
 ## Installation
 
 Core (pypdfium2 + pdfplumber, no optional dependencies):
@@ -76,6 +87,21 @@ pip install pdf2md[dev]
 | **auto** | Analyzes each page and selects the appropriate tier. Scanned pages get OCR, complex layouts get VLM. | Depends | Varies | Varies |
 
 The `auto` tier (default) inspects each page for text layers, table complexity, figure density, and layout structure, then picks the cheapest tier that will produce accurate output.
+
+## Benchmark
+
+Tested on 6 real papers (fast tier, no VLM):
+
+| Paper | Pages | Sections | Tables | Math | Figures | Time |
+|-------|-------|----------|--------|------|---------|------|
+| Mistral 7B | 9 | 12 | 0 | — | — | 3.7s |
+| Attention Is All You Need | 15 | 32 | 8 | 24 | — | 3.3s |
+| GPT-4 Technical Report | 100 | 99 | 71 | 5 | — | 8.1s |
+| BERT | 16 | 51 | 8 | 5 | — | 2.1s |
+| Nature (Mayassi et al. 2024) | 41 | 34 | 7 | 25 | 58 | 79s |
+| DG EMI Model (math-heavy) | 30 | 16 | 6 | 604 | 5 | 6.8s |
+
+Run your own: `pdf2md benchmark` or `pdf2md benchmark --compare` for tier comparison.
 
 ## Providers
 
@@ -166,6 +192,9 @@ for table in doc.tables:
 for fig in doc.figures:
     print(f"  Figure {fig.id}: {fig.caption}")
 
+for eq in doc.equations:
+    print(f"  {eq.id}: {'inline' if eq.inline else 'display'} — {eq.latex[:50]}")
+
 # Save outputs
 doc.save_markdown("output.md")
 doc.save_json("output.json")
@@ -230,7 +259,7 @@ pdf2md info
 ## Contributing
 
 ```bash
-git clone https://github.com/tmayassi/pdf2md
+git clone https://github.com/stillme/pdf2md
 cd pdf2md
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,full]"
