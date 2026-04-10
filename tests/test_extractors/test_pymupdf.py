@@ -55,3 +55,23 @@ class TestPymupdfExtractor:
         figures = ext.extract_figures(sample_pdf_bytes)
         assert isinstance(figures, list)
         # Sample PDF may or may not have large images, but shouldn't error
+
+    def test_extract_figures_max_per_page_one(self, sample_pdf_bytes):
+        from pdf2md.extractors.pymupdf_ext import PymupdfExtractor
+        ext = PymupdfExtractor()
+        # With max_per_page=1, each page contributes at most one figure
+        figures = ext.extract_figures(sample_pdf_bytes, max_per_page=1)
+        assert isinstance(figures, list)
+        pages_seen = [f["page"] for f in figures]
+        assert len(pages_seen) == len(set(pages_seen)), (
+            "max_per_page=1 should yield at most one figure per page"
+        )
+
+    def test_extract_figures_max_per_page_none_returns_all(self, sample_pdf_bytes):
+        from pdf2md.extractors.pymupdf_ext import PymupdfExtractor
+        ext = PymupdfExtractor()
+        # max_per_page=None disables the per-page limit
+        unrestricted = ext.extract_figures(sample_pdf_bytes, max_per_page=None)
+        restricted = ext.extract_figures(sample_pdf_bytes, max_per_page=1)
+        # Restricted should have no more figures than unrestricted
+        assert len(restricted) <= len(unrestricted)

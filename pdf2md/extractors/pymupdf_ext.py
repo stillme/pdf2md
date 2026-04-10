@@ -227,7 +227,8 @@ class PymupdfExtractor:
         return headings
 
     def extract_figures(
-        self, pdf_bytes: bytes, min_width: int = 200, min_height: int = 200
+        self, pdf_bytes: bytes, min_width: int = 200, min_height: int = 200,
+        max_per_page: int | None = 1,
     ) -> list[dict]:
         """Extract significant images from the PDF.
 
@@ -235,6 +236,10 @@ class PymupdfExtractor:
 
         Filters: only images >= min_width x min_height (skips icons, decorations,
         vector fragments).
+
+        When max_per_page is set (default 1), keeps only the largest images per
+        page by area. This prevents sub-panels (panels A, B, C of a composite
+        figure) from each counting as a separate figure.
         """
         try:
             doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
@@ -272,4 +277,20 @@ class PymupdfExtractor:
                     pass
 
         doc.close()
+
+        # Limit to largest N images per page to avoid counting sub-panels
+        # (panels A, B, C of a composite figure) as separate figures.
+        if max_per_page is not None:
+            by_page: dict[int, list[dict]] = {}
+            for fig in figures:
+                by_page.setdefault(fig["page"], []).append(fig)
+            figures = []
+            for page_key in sorted(by_page.keys()):
+                page_figs = sorted(
+                    by_page[page_key],
+                    key=lambda f: f["width"] * f["height"],
+                    reverse=True,
+                )
+                figures.extend(page_figs[:max_per_page])
+
         return figures
