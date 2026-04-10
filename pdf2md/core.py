@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 import time
+from io import BytesIO
 from pathlib import Path
 from typing import Sequence
 
 import pypdfium2 as pdfium
 
 from pdf2md.assembler import assemble_markdown
-from pdf2md.config import Config, Tier
+from pdf2md.config import Config, FigureMode, Tier
 from pdf2md.document import Document
+from pdf2md.enhancers.figures import enhance_figures
+from pdf2md.enhancers.tables import enhance_table
 from pdf2md.extractors import get_available_extractors, get_extractor_by_name
 from pdf2md.extractors.base import PageContent
+from pdf2md.providers.base import VLMProvider
+from pdf2md.providers.registry import get_provider
 from pdf2md.triage.analyzer import analyze_page
 from pdf2md.triage.router import select_engine, select_tier
 
@@ -55,6 +60,35 @@ def _merge_tables(primary: PageContent, table_source: PageContent) -> PageConten
     if table_source.tables and not primary.tables:
         primary = primary.model_copy(update={"tables": table_source.tables})
     return primary
+
+
+def _get_vlm_provider(provider_string: str | None = None) -> VLMProvider | None:
+    """Get a VLM provider, returning None if unavailable."""
+    try:
+        return get_provider(provider_string)
+    except Exception:
+        return None
+
+
+def _render_page_image(pdf_bytes: bytes, page_number: int, dpi: int = 150) -> bytes | None:
+    """Render a PDF page to PNG bytes for VLM enhancement."""
+    try:
+        pdf = pdfium.PdfDocument(pdf_bytes)
+        if page_number < 0 or page_number >= len(pdf):
+            pdf.close()
+            return None
+        page = pdf[page_number]
+        scale = dpi / 72
+        bitmap = page.render(scale=scale)
+        pil_image = bitmap.to_pil()
+        page.close()
+        pdf.close()
+
+        buf = BytesIO()
+        pil_image.save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception:
+        return None
 
 
 def convert(
@@ -142,6 +176,36 @@ def convert(
 
     # Assemble into Document
     doc = assemble_markdown(all_pages)
+
+    # VLM enhancement for STANDARD and DEEP tiers
+    effective_tier_enum = config.tier
+    if effective_tier_enum == Tier.AUTO and num_pages > 0:
+        analysis0 = analyze_page(pdf_bytes, 0)
+        effective_tier_enum = select_tier(analysis0, Tier.AUTO)
+
+    if effective_tier_enum in (Tier.STANDARD, Tier.DEEP):
+        vlm = _get_vlm_provider(config.provider)
+        if vlm is not None:
+            # Enhance figures if mode is DESCRIBE or EXTRACT
+            if config.figures in (FigureMode.DESCRIBE, FigureMode.EXTRACT):
+                doc = doc.model_copy(update={
+                    "figures": enhance_figures(
+                        doc.figures,
+                        mode=config.figures,
+                        provider=vlm,
+                        output_dir=config.output_dir,
+                    ),
+                })
+
+            # Enhance low-confidence tables
+            enhanced_tables = []
+            for table in doc.tables:
+                page_image = _render_page_image(pdf_bytes, table.page)
+                enhanced_tables.append(
+                    enhance_table(table, provider=vlm, page_image=page_image)
+                )
+            if enhanced_tables:
+                doc = doc.model_copy(update={"tables": enhanced_tables})
 
     # Stamp tier and timing
     elapsed_ms = int((time.monotonic() - t0) * 1000)

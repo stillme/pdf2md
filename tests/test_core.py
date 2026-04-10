@@ -58,3 +58,21 @@ def test_convert_save_markdown(sample_pdf_bytes, tmp_path):
     doc.save_markdown(str(out))
     content = out.read_text()
     assert len(content) > 100
+
+
+def test_convert_standard_tier_with_mock_vlm(sample_pdf_bytes):
+    from unittest.mock import MagicMock, patch
+    mock_provider = MagicMock()
+    mock_provider.name = "gemini"
+    mock_provider.complete_sync.return_value = "A figure showing experimental results."
+    with patch("pdf2md.core._get_vlm_provider", return_value=mock_provider):
+        doc = convert(sample_pdf_bytes, tier="standard", figures="describe")
+        assert doc.tier_used == "standard"
+
+
+def test_convert_standard_without_vlm_falls_back(sample_pdf_bytes):
+    from unittest.mock import patch
+    with patch("pdf2md.core._get_vlm_provider", return_value=None):
+        doc = convert(sample_pdf_bytes, tier="standard")
+        assert doc.metadata.pages == 2
+        assert len(doc.markdown) > 100
