@@ -42,6 +42,15 @@ BENCHMARK_PAPERS = [
         "has_math": False,
         "category": "ml-paper",
     },
+    {
+        "name": "nature-gut-adaptation",
+        "path": "/Users/tmayassi/Downloads/s41586-024-08216-z.pdf",
+        "url": "",  # local file, no URL needed
+        "expected_pages": 41,
+        "has_tables": True,
+        "has_math": False,
+        "category": "nature-article",
+    },
 ]
 
 
@@ -82,33 +91,53 @@ def run_benchmarks(
 
     for paper in papers:
         name = paper["name"]
-        url = paper["url"]
+        source = paper.get("path") or paper.get("url", "")
         print(f"\n{'='*60}")
         print(f"Benchmark: {name}")
-        print(f"URL: {url}")
+        print(f"Source: {source}")
 
-        # Download
+        # Download or load from local file
         try:
-            r = httpx.get(
-                url,
-                follow_redirects=True,
-                timeout=60,
-                headers={"User-Agent": "pdf2md-benchmark/1.0"},
-            )
-            if r.status_code != 200 or r.content[:5] != b"%PDF-":
-                if skip_download_errors:
-                    print(f"  SKIP: Download failed (status={r.status_code})")
-                    results.append(BenchmarkResult(
-                        name=name, category=paper.get("category", ""), pages=0,
-                        expected_pages=paper.get("expected_pages", 0),
-                        title_extracted=False, title="", sections_found=0,
-                        section_names=[], tables_found=0, figures_found=0,
-                        confidence=0, time_ms=0, error=f"Download failed: {r.status_code}",
-                    ))
-                    continue
-                raise ValueError(f"Download failed: {r.status_code}")
-            pdf_bytes = r.content
-            print(f"  Downloaded: {len(pdf_bytes):,} bytes")
+            if source.startswith("/") or source.startswith("~"):
+                # Local file
+                from pathlib import Path
+                p = Path(source).expanduser()
+                if not p.exists():
+                    if skip_download_errors:
+                        print(f"  SKIP: Local file not found: {p}")
+                        results.append(BenchmarkResult(
+                            name=name, category=paper.get("category", ""), pages=0,
+                            expected_pages=paper.get("expected_pages", 0),
+                            title_extracted=False, title="", sections_found=0,
+                            section_names=[], tables_found=0, figures_found=0,
+                            confidence=0, time_ms=0, error=f"File not found: {p}",
+                        ))
+                        continue
+                    raise FileNotFoundError(f"Local file not found: {p}")
+                pdf_bytes = p.read_bytes()
+                print(f"  Loaded: {len(pdf_bytes):,} bytes (local)")
+            else:
+                # URL download
+                r = httpx.get(
+                    source,
+                    follow_redirects=True,
+                    timeout=60,
+                    headers={"User-Agent": "pdf2md-benchmark/1.0"},
+                )
+                if r.status_code != 200 or r.content[:5] != b"%PDF-":
+                    if skip_download_errors:
+                        print(f"  SKIP: Download failed (status={r.status_code})")
+                        results.append(BenchmarkResult(
+                            name=name, category=paper.get("category", ""), pages=0,
+                            expected_pages=paper.get("expected_pages", 0),
+                            title_extracted=False, title="", sections_found=0,
+                            section_names=[], tables_found=0, figures_found=0,
+                            confidence=0, time_ms=0, error=f"Download failed: {r.status_code}",
+                        ))
+                        continue
+                    raise ValueError(f"Download failed: {r.status_code}")
+                pdf_bytes = r.content
+                print(f"  Downloaded: {len(pdf_bytes):,} bytes")
         except Exception as e:
             if skip_download_errors:
                 print(f"  SKIP: {e}")

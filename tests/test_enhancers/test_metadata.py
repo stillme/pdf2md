@@ -44,3 +44,10 @@ def test_extract_title_skips_affiliations():
     text = "Department of Computer Science, MIT\nMy Great Paper Title\nJohn Smith\n\nAbstract"
     meta = extract_metadata(text, pages=5)
     assert meta.title == "My Great Paper Title"
+
+
+def test_extract_title_skips_journal_header():
+    text = "Nature | Vol 636 | 12 December 2024 | 447\nArticle\nSpatially restricted immune and microbiota-driven adaptation of the gut\nToufic Mayassi, Chenhao Li\n\nAbstract"
+    meta = extract_metadata(text, pages=41)
+    assert "Spatially restricted" in meta.title
+    assert "Nature" not in meta.title

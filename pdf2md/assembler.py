@@ -75,6 +75,10 @@ def _is_heading(line: str) -> dict | None:
     if _ALLCAPS_RE.match(stripped) and len(stripped) >= 8:
         words = stripped.split()
         if len(words) >= 2 and len(words) <= 6:
+            # Reject figure panel label patterns: all tokens are 1-3 letter uppercase
+            # (e.g. "SPF GF FMT", "AB CD AB CD AB CD", "WT KO WT KO")
+            if all(len(w) <= 3 for w in words):
+                return None
             return {"text": stripped, "level": 1}
 
     return None

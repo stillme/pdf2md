@@ -151,3 +151,12 @@ def test_no_duplicate_table_text():
     # since they duplicate the markdown table content
     assert "Control 12.3" not in non_table_text, "Table row text duplicated outside markdown table"
     assert "Treatment A 18.7" not in non_table_text, "Table row text duplicated outside markdown table"
+
+
+def test_figure_panel_labels_not_headings():
+    from pdf2md.assembler import _is_heading
+    assert _is_heading("SPF GF FMT") is None
+    assert _is_heading("AB CD AB CD AB CD") is None
+    assert _is_heading("WT KO WT KO") is None
+    # But real short headings still work
+    assert _is_heading("Discussion") is not None

@@ -93,6 +93,15 @@ def _should_skip_as_title(stripped: str) -> bool:
     # Author list
     if _is_author_line(stripped):
         return True
+    # Journal header lines with pipe separators (e.g. "Nature | Vol 636 | 12 December 2024 | 447")
+    if stripped.count("|") >= 2:
+        return True
+    # Journal header with volume info (e.g. "Nature | Vol 636")
+    if re.match(r"^[A-Z][a-z]+\s*\|\s*Vol\s+\d+", stripped):
+        return True
+    # Journal format labels (Nature-style)
+    if stripped in ("Article", "Letter", "Review", "Perspective", "Brief Communication"):
+        return True
     return False
 
 

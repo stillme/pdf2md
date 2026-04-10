@@ -9,8 +9,10 @@ def test_benchmark_papers_defined():
     assert len(BENCHMARK_PAPERS) >= 3
     for p in BENCHMARK_PAPERS:
         assert "name" in p
-        assert "url" in p
-        assert p["url"].startswith("https://")
+        # Each paper must have either a URL or a local path
+        has_url = p.get("url", "").startswith("https://")
+        has_path = bool(p.get("path", ""))
+        assert has_url or has_path, f"Paper {p['name']} needs a url or path"
 
 
 def test_benchmark_result_creation():
