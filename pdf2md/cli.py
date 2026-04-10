@@ -70,6 +70,18 @@ def convert(source, output, tier, figures, provider, verify, json_out):
 
 
 @main.command()
+@click.option("--tier", default="fast", type=click.Choice(["fast", "standard", "deep"]))
+@click.option("--max-papers", default=None, type=int, help="Limit number of papers")
+def benchmark(tier, max_papers):
+    """Run benchmarks on real open-access papers."""
+    from pdf2md.benchmarks.runner import run_benchmarks, print_summary
+
+    click.echo(f"Running pdf2md benchmarks (tier={tier})...")
+    results = run_benchmarks(tier=tier, max_papers=max_papers)
+    print_summary(results)
+
+
+@main.command()
 def info():
     """Show available engines and providers."""
     from pdf2md.extractors import get_available_extractors
