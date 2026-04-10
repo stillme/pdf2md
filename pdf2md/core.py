@@ -12,6 +12,7 @@ import pypdfium2 as pdfium
 from pdf2md.assembler import assemble_markdown
 from pdf2md.config import Config, FigureMode, Tier
 from pdf2md.document import Document
+from pdf2md.enhancers.captions import extract_figure_captions, extract_panel_references, match_captions_to_figures
 from pdf2md.enhancers.figures import enhance_figures
 from pdf2md.enhancers.math import convert_unicode_math, detect_math_regions, extract_equations_vlm
 from pdf2md.enhancers.metadata import extract_metadata
@@ -189,26 +190,24 @@ def convert(
         # Enhanced figure extraction with size filtering
         pymupdf_figures = pymupdf_ext.extract_figures(pdf_bytes)
         if pymupdf_figures:
-            # Build a set of pages that already have figures from the primary extractor
-            pages_with_figures = {
-                p.page_number
-                for p in all_pages
-                if p.figures
-            }
+            # Build a dict of page_number -> list[RawFigure] from PyMuPDF's
+            # high-quality large figures (200x200+). These replace whatever
+            # the primary extractor found (which may be tiny/spurious).
+            pymupdf_by_page: dict[int, list[RawFigure]] = {}
             for fig_info in pymupdf_figures:
                 fig_page = fig_info["page"]
-                if fig_page < len(all_pages) and fig_page not in pages_with_figures:
-                    all_pages[fig_page] = all_pages[fig_page].model_copy(
-                        update={
-                            "figures": all_pages[fig_page].figures + [
-                                RawFigure(
-                                    image_bytes=fig_info["image_bytes"],
-                                    caption=None,
-                                    bbox=None,
-                                )
-                            ]
-                        }
+                if fig_page < len(all_pages):
+                    pymupdf_by_page.setdefault(fig_page, []).append(
+                        RawFigure(
+                            image_bytes=fig_info["image_bytes"],
+                            caption=None,
+                            bbox=None,
+                        )
                     )
+            for page_num, figs in pymupdf_by_page.items():
+                all_pages[page_num] = all_pages[page_num].model_copy(
+                    update={"figures": figs}
+                )
     except ImportError:
         pass
 
@@ -224,6 +223,16 @@ def convert(
         "doi": extracted_meta.doi or doc.metadata.doi,
     })
     doc = doc.model_copy(update={"metadata": updated_meta})
+
+    # Extract and match figure captions from the assembled markdown
+    captions = extract_figure_captions(doc.markdown)
+    if captions and doc.figures:
+        doc = doc.model_copy(update={
+            "figures": match_captions_to_figures(doc.figures, captions),
+        })
+
+    # Store panel references as metadata (available via doc internals)
+    _panel_refs = extract_panel_references(doc.markdown)
 
     # Math enhancement (all tiers): convert Unicode math symbols to LaTeX
     doc = doc.model_copy(update={

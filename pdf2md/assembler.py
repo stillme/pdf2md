@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import re
 from collections import Counter
 
@@ -308,10 +309,12 @@ def assemble_markdown(
         for raw_fig in page.figures:
             figure_counter += 1
             fig_id = f"fig{figure_counter}"
+            img_b64 = base64.b64encode(raw_fig.image_bytes).decode() if raw_fig.image_bytes else None
             all_figures.append(Figure(
                 id=fig_id,
                 caption=raw_fig.caption,
                 page=page.page_number,
+                image_base64=img_b64,
             ))
             if raw_fig.caption:
                 page_md_parts.append(f"\n![{raw_fig.caption}]({fig_id})\n")
