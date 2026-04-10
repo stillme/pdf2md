@@ -146,6 +146,28 @@ def _count_math_symbols(text: str) -> int:
     return sum(1 for ch in text if ch in _MATH_CHARS)
 
 
+def _is_only_numbers_and_spaces(line: str) -> bool:
+    """Check if a line contains only numbers, spaces, minus signs, and punctuation.
+
+    Such lines are typically axis tick labels from figures, not real math.
+    They need at least one genuine math symbol (not just minus/digits) to be math.
+    """
+    stripped = line.strip()
+    # Allow digits, spaces, minus/dash, periods, commas, parentheses
+    return bool(re.match(r'^[\d\s\-\.\,\(\)\+]+$', stripped))
+
+
+def _has_real_math_symbol(line: str) -> bool:
+    """Check if a line has at least one non-numeric math symbol.
+
+    Minus signs and digits alone don't count — we need operators like
+    nabla, partial, sum, integral, greek letters, etc.
+    """
+    # These are "real" math indicators (not just numbers with minus signs)
+    _REAL_MATH_SYMBOLS: set[str] = set(UNICODE_TO_LATEX.keys()) - {'−'}  # exclude minus
+    return any(ch in _REAL_MATH_SYMBOLS for ch in line)
+
+
 def _is_display_math(line: str) -> bool:
     """Determine whether a line is pure display math (no substantial English).
 
@@ -153,10 +175,15 @@ def _is_display_math(line: str) -> bool:
     - It has math symbols, AND
     - The non-math, non-punctuation, non-digit content is very short
       (single-letter variables, operators, etc., but no English words of 4+ chars).
+    - It's NOT just a line of numbers/spaces (axis tick labels).
     """
     # Strip leading/trailing whitespace
     stripped = line.strip()
     if not stripped:
+        return False
+
+    # Lines that are only numbers/spaces/dashes are NOT math — they're axis labels
+    if _is_only_numbers_and_spaces(stripped) and not _has_real_math_symbol(stripped):
         return False
 
     # Split into words and check for English content
@@ -229,6 +256,12 @@ def convert_unicode_math(text: str) -> str:
 
         # No math symbols or already delimited — leave unchanged
         if (count < _MIN_MATH_SYMBOLS and not has_heavy) or _line_already_delimited(line):
+            result_lines.append(line)
+            continue
+
+        # Lines that are only numbers/spaces with no real math symbols
+        # should not be wrapped (they're axis tick labels from figures)
+        if _is_only_numbers_and_spaces(line) and not _has_real_math_symbol(line):
             result_lines.append(line)
             continue
 

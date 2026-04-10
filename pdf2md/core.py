@@ -17,6 +17,7 @@ from pdf2md.enhancers.figures import enhance_figures
 from pdf2md.enhancers.math import convert_unicode_math, detect_math_regions, extract_equations_vlm
 from pdf2md.enhancers.metadata import extract_metadata
 from pdf2md.enhancers.tables import enhance_table
+from pdf2md.enhancers.text_cleaner import clean_figure_text
 from pdf2md.extractors import get_available_extractors, get_extractor_by_name
 from pdf2md.extractors.base import PageContent, RawFigure
 from pdf2md.providers.base import VLMProvider
@@ -223,6 +224,11 @@ def convert(
         "doi": extracted_meta.doi or doc.metadata.doi,
     })
     doc = doc.model_copy(update={"metadata": updated_meta})
+
+    # Clean figure-leak text (axis labels, gene names from figures)
+    doc = doc.model_copy(update={
+        "markdown": clean_figure_text(doc.markdown),
+    })
 
     # Extract and match figure captions from the assembled markdown
     captions = extract_figure_captions(doc.markdown)

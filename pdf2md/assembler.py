@@ -85,18 +85,24 @@ def _is_heading(line: str) -> dict | None:
 
 
 def _detect_repeated_lines(pages: list[PageContent]) -> set[str]:
-    """Find lines appearing as first or last line on 50%+ of pages (headers/footers)."""
+    """Find lines appearing as first/last or lines 2-3 on 50%+ of pages (headers/footers)."""
     if len(pages) < 2:
         return set()
 
     first_lines: list[str] = []
     last_lines: list[str] = []
+    # Also check lines 2 and 3 (0-indexed: indices 1, 2) for journal headers
+    early_lines: list[str] = []
 
     for page in pages:
         lines = page.text.strip().splitlines()
         if lines:
             first_lines.append(lines[0].strip())
             last_lines.append(lines[-1].strip())
+            # Add lines at positions 1 and 2 (if they exist)
+            for idx in (1, 2):
+                if idx < len(lines):
+                    early_lines.append(lines[idx].strip())
 
     threshold = len(pages) * 0.5
     repeated = set()
@@ -107,19 +113,58 @@ def _detect_repeated_lines(pages: list[PageContent]) -> set[str]:
     for line, count in Counter(last_lines).items():
         if count >= threshold and count >= 2 and line:
             repeated.add(line)
+    for line, count in Counter(early_lines).items():
+        if count >= threshold and count >= 2 and line:
+            repeated.add(line)
 
     return repeated
 
 
+def _clean_hyphens(text: str) -> str:
+    """Remove soft hyphens and rejoin words broken across line boundaries.
+
+    PDF two-column layouts produce soft hyphens when words break across lines.
+    These appear as U+00AD (soft hyphen), U+FFBE, or U+FFFE in extracted text.
+    """
+    # Remove soft hyphen character (U+00AD)
+    text = text.replace('\xad', '')
+    # Rejoin words split by replacement chars across line breaks
+    # (must come BEFORE the plain replace to capture the line-break pattern)
+    text = re.sub(r'(\w)[\uffbe\ufffe]\s*\n\s*(\w)', r'\1\2', text)
+    # Remove remaining replacement characters used for hyphens
+    text = text.replace('\uffbe', '')
+    text = text.replace('\ufffe', '')
+    # Rejoin standard hyphenated line breaks (word- \n continuation)
+    text = re.sub(r'(\w)-\s*\n\s*(\w)', r'\1\2', text)
+    return text
+
+
+# Journal header pattern (Nature and similar)
+_JOURNAL_HEADER_RE = re.compile(
+    r'^\d*\s*\|?\s*Nature\s*\|', re.IGNORECASE
+)
+# Standalone article type lines at page boundaries
+_ARTICLE_TYPE_RE = re.compile(r'^(Article|Letter|Review|Perspective|Brief Communication)$', re.IGNORECASE)
+
+
 def _clean_page_text(text: str, repeated_lines: set[str]) -> str:
-    """Strip repeated headers/footers and lone page numbers."""
+    """Strip repeated headers/footers, journal headers, and lone page numbers."""
+    # First, clean soft hyphens and rejoin broken words
+    text = _clean_hyphens(text)
+
     lines = text.splitlines()
     cleaned: list[str] = []
-    for line in lines:
+    for i, line in enumerate(lines):
         stripped = line.strip()
         if stripped in repeated_lines:
             continue
         if _PAGE_NUMBER_RE.match(stripped):
+            continue
+        # Check journal header pattern on first 3 lines of the page
+        if i < 3 and _JOURNAL_HEADER_RE.match(stripped):
+            continue
+        # Check standalone article type lines in first 3 lines
+        if i < 3 and _ARTICLE_TYPE_RE.match(stripped):
             continue
         cleaned.append(line)
     return "\n".join(cleaned)
