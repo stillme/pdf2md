@@ -76,3 +76,17 @@ def test_convert_standard_without_vlm_falls_back(sample_pdf_bytes):
         doc = convert(sample_pdf_bytes, tier="standard")
         assert doc.metadata.pages == 2
         assert len(doc.markdown) > 100
+
+
+# --- Bug 4: Deep tier preserves title after reassembly ---
+
+def test_deep_tier_preserves_title(sample_pdf_bytes):
+    import json
+    from unittest.mock import MagicMock, patch
+    import pdf2md
+    mock_provider = MagicMock()
+    mock_provider.name = "test"
+    mock_provider.complete_sync.return_value = json.dumps({"status": "pass", "confidence": 0.95, "corrections": []})
+    with patch("pdf2md.core._get_vlm_provider", return_value=mock_provider):
+        doc = pdf2md.convert(sample_pdf_bytes, tier="deep")
+        assert doc.metadata.title is not None, "Title should be preserved after deep tier reassembly"

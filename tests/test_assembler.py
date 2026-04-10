@@ -99,3 +99,55 @@ def test_assemble_strips_headers_footers():
     ]
     result = assemble_markdown(pages)
     assert result.markdown.count("Journal of Examples Vol 1") <= 1
+
+
+# --- Bug 1: Numbered section headings ---
+
+def test_numbered_headings():
+    from pdf2md.assembler import _is_heading
+    assert _is_heading("1 Introduction") is not None
+    assert _is_heading("2 Methods") is not None
+    assert _is_heading("2.1 Data Collection") is not None
+    assert _is_heading("3.2.1 Statistical Analysis") is not None
+    assert _is_heading("1. Introduction") is not None  # with period
+    assert _is_heading("12 Some Long Random Sentence That Is Not A Heading Really") is None
+
+
+# --- Bug 2: Gene names not headings ---
+
+def test_gene_names_not_headings():
+    from pdf2md.assembler import _is_heading
+    assert _is_heading("RHOA") is None
+    assert _is_heading("SPLICEOSOME") is None
+    assert _is_heading("ISCU") is None
+    assert _is_heading("MT-TI") is None
+    # But real ALL CAPS headings still work
+    assert _is_heading("MATERIALS AND METHODS") is not None
+    assert _is_heading("RESULTS AND DISCUSSION") is not None
+
+
+# --- Bug 3: Table text deduplication ---
+
+def test_no_duplicate_table_text():
+    """Table cell values should not appear both as inline text and in the markdown table."""
+    pages = [
+        PageContent(
+            page_number=0,
+            text="Results\nTable 1 shows the results.\nCondition Mean SD p-value\nControl 12.3 2.1 -\nTreatment A 18.7 3.4 0.002",
+            tables=[RawTable(
+                markdown="| Condition | Mean | SD | p-value |\n|---|---|---|---|\n| Control | 12.3 | 2.1 | - |\n| Treatment A | 18.7 | 3.4 | 0.002 |",
+                headers=["Condition", "Mean", "SD", "p-value"],
+                rows=[["Control", "12.3", "2.1", "-"], ["Treatment A", "18.7", "3.4", "0.002"]],
+                confidence=0.9,
+            )],
+            figures=[], confidence=0.9,
+        ),
+    ]
+    result = assemble_markdown(pages)
+    lines = result.markdown.split('\n')
+    non_table_lines = [l for l in lines if not l.startswith('|') and not l.startswith('---')]
+    non_table_text = '\n'.join(non_table_lines)
+    # The inline text rows like "Control 12.3 2.1 -" should be stripped
+    # since they duplicate the markdown table content
+    assert "Control 12.3" not in non_table_text, "Table row text duplicated outside markdown table"
+    assert "Treatment A 18.7" not in non_table_text, "Table row text duplicated outside markdown table"

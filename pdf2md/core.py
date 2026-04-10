@@ -242,6 +242,16 @@ def convert(
             all_pages = corrected_pages
             doc = assemble_markdown(all_pages)
 
+            # Re-extract metadata lost during reassembly
+            full_text_corrected = "\n".join(p.text for p in all_pages)
+            meta = extract_metadata(full_text_corrected, doc.metadata.pages)
+            updated_meta = doc.metadata.model_copy(update={
+                "title": meta.title or doc.metadata.title,
+                "authors": meta.authors or doc.metadata.authors,
+                "doi": meta.doi or doc.metadata.doi,
+            })
+            doc = doc.model_copy(update={"metadata": updated_meta})
+
     # Stamp tier and timing
     elapsed_ms = int((time.monotonic() - t0) * 1000)
     effective_tier = tier.value if isinstance(tier, Tier) else str(tier)
