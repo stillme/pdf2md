@@ -41,7 +41,9 @@ pdf2md convert https://arxiv.org/pdf/2301.00001.pdf --tier deep
 
 - **Bold heading detection** — two-pass font analysis using PyMuPDF determines body text size, then detects bold text larger than body as headings. Catches Nature-style section headings that text-only detection misses. Filters out author names, figure captions, and URLs.
 - **Math/LaTeX conversion** — converts 60+ Unicode math symbols to LaTeX (`\nabla`, `\alpha`, `\sum`, etc.), wraps equations in `$...$` / `$$...$$` delimiters. Handles both display and inline equations.
-- **Figure extraction** — PyMuPDF extracts embedded images (200x200+ pixels) with xref dedup. pypdfium2 renders full pages as fallback. VLM descriptions available on standard/deep tiers.
+- **Figure extraction** — PyMuPDF extracts embedded images (200x200+ pixels) with xref dedup. pypdfium2 renders full pages as fallback. Auto MIME detection (JPEG/PNG/GIF/WebP from magic bytes) and automatic image resizing for large figures (>1500px). VLM figure descriptions available on standard/deep tiers.
+- **Figure caption extraction** — Parses figure legends from markdown text. Supports Nature style ("Fig. 1 | Caption text."), standard ("Figure 2. Caption text."), and Extended Data ("Extended Data Fig. 3 | Caption text.").
+- **Panel reference parsing** — Extracts in-text references like "Fig. 3a", "Fig. 4c,d" with range expansion ("Fig. 2a--c" expands to panels a, b, c). 160 panel references found on the Nature benchmark paper.
 - **Table extraction** — pdfplumber table detection with optional VLM correction on standard/deep tiers.
 - **Agentic verify-correct loop** — deep tier uses a VLM to visually compare rendered PDF pages against generated markdown, then corrects errors automatically.
 - **Metadata extraction** — title, authors, DOI parsed from document structure.
@@ -94,7 +96,7 @@ Tested on 6 real papers (fast tier, no VLM):
 
 | Paper | Pages | Sections | Tables | Math | Figures | Time |
 |-------|-------|----------|--------|------|---------|------|
-| Mistral 7B | 9 | 12 | 0 | — | — | 3.7s |
+| Mistral 7B | 9 | 12 | 0 | — | 6 | 3.7s |
 | Attention Is All You Need | 15 | 32 | 8 | 24 | — | 3.3s |
 | GPT-4 Technical Report | 100 | 99 | 71 | 5 | — | 8.1s |
 | BERT | 16 | 51 | 8 | 5 | — | 2.1s |
@@ -191,6 +193,16 @@ for table in doc.tables:
 
 for fig in doc.figures:
     print(f"  Figure {fig.id}: {fig.caption}")
+    if fig.description:  # VLM-generated (standard/deep tier)
+        print(f"    Description: {fig.description}")
+    if fig.image_base64:
+        print(f"    Image: {len(fig.image_base64) // 1024}KB")
+
+# Panel references (in-text figure citations)
+from pdf2md.enhancers.captions import extract_panel_references
+refs = extract_panel_references(doc.markdown)
+for ref in refs:
+    print(f"  Fig.{ref['fig_num']} panels {ref['panels']}: {ref['context']}")
 
 for eq in doc.equations:
     print(f"  {eq.id}: {'inline' if eq.inline else 'display'} — {eq.latex[:50]}")

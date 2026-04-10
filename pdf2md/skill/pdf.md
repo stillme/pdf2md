@@ -23,7 +23,7 @@ Examples:
 2. Run conversion with the specified options
 3. Math/LaTeX conversion runs automatically on all tiers (60+ Unicode symbols mapped to LaTeX, display/inline equation wrapping)
 4. Bold heading detection runs automatically when PyMuPDF is installed (two-pass font analysis catches Nature-style section headings)
-5. Figure extraction uses PyMuPDF embedded images with xref dedup; VLM descriptions available on standard/deep tiers
+5. Figure extraction uses PyMuPDF embedded images with xref dedup, auto MIME detection (JPEG/PNG/GIF/WebP), and automatic resizing for large images. Caption extraction supports Nature ("|"), standard ("."), and Extended Data styles. Panel references (e.g., "Fig. 3a", "Fig. 4c,d") are parsed with range expansion. VLM figure descriptions available on standard/deep tiers
 6. Return the markdown directly into the conversation context
 7. For deep tier, show confidence scores
 
@@ -76,7 +76,8 @@ doc = pdf2md.convert(source, tier=tier, figures=figures, provider=provider)
    - `doc.metadata.doi` -- DOI if found
    - `doc.sections` -- list of Section(level, title, content, page)
    - `doc.tables` -- list of Table(id, markdown, headers, rows, confidence)
-   - `doc.figures` -- list of Figure(id, caption, description)
+   - `doc.figures` -- list of Figure(id, caption, description, image_base64)
+   - Panel references: `from pdf2md.enhancers.captions import extract_panel_references; refs = extract_panel_references(doc.markdown)` -- returns list of dict(fig_num, panels, context)
    - `doc.equations` -- list of Equation(id, latex, inline, page)
    - `doc.bibliography` -- list of Reference(id, authors, title, journal, year, doi)
 
@@ -93,6 +94,13 @@ doc = pdf2md.convert("paper.pdf", tier="deep")
 print(doc.markdown)
 print(f"\n---\nConverted {doc.metadata.pages} pages (engine: {doc.engine_used}, tier: {doc.tier_used}, {doc.processing_time_ms}ms, {doc.confidence:.0%} confidence)")
 print(f"  {len(doc.sections)} sections, {len(doc.tables)} tables, {len(doc.equations)} equations, {len(doc.figures)} figures")
+
+# Show figures with captions and VLM descriptions
+for fig in doc.figures:
+    line = f"  {fig.id}: {fig.caption or '(no caption)'}"
+    if fig.description:
+        line += f" — {fig.description[:80]}..."
+    print(line)
 
 # Flag low-confidence pages
 for i, score in enumerate(doc.page_confidences):
