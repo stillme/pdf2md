@@ -32,6 +32,18 @@ _GENE_LIKE_RE = re.compile(
     r'(?=\s|$|[,.])'
 )
 
+# Known identifier prefixes that should NOT have trailing digits superscripted.
+# Patterns like "fig1", "table2", "equation3", "supp1", etc. should remain as-is.
+_IDENTIFIER_PREFIXES = {
+    'fig', 'figure', 'figs',
+    'tab', 'table', 'tables',
+    'eq', 'eqn', 'equation', 'equations',
+    'supp', 'supplementary', 'supplement',
+    'panel', 'panels',
+    'box', 'boxes',
+    'step', 'steps',
+}
+
 
 def detect_superscripts(text: str) -> str:
     """Detect and wrap likely superscript references with <sup> tags.
@@ -59,8 +71,10 @@ def _single_ref_replace(m: re.Match) -> str:
     word = m.group(1)
     digits = m.group(2)
 
-    # Skip if the digit is likely part of a version or measurement
-    # (e.g., "phase3", "type2", "grade3" — but these are uncommon in
-    # scientific text without a space, so we accept the trade-off)
+    # Skip if the word is a known identifier prefix (fig, table, equation, etc.)
+    # These should not have trailing digits wrapped as superscripts.
+    word_lower = word.lower()
+    if word_lower in _IDENTIFIER_PREFIXES:
+        return m.group(0)  # Return original text unchanged
 
     return f'{word}<sup>{digits}</sup>'

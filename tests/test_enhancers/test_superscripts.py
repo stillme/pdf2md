@@ -89,6 +89,45 @@ def test_no_match_short_words():
     assert "<sup>" not in result
 
 
+def test_no_match_figure_identifier():
+    """Figure identifiers like 'fig1', 'fig2' should NOT get <sup> tags."""
+    text = "As shown in fig1. The data in fig2 demonstrates."
+    result = detect_superscripts(text)
+    assert "fig1" in result
+    assert "fig2" in result
+    assert "fig<sup>" not in result
+
+
+def test_no_match_table_identifier():
+    """Table identifiers like 'tab1', 'table1' should NOT get <sup> tags."""
+    text = "Results in tab1. Data from table2 shows."
+    result = detect_superscripts(text)
+    assert "tab1" in result
+    assert "table2" in result
+    assert "tab<sup>" not in result
+    assert "table<sup>" not in result
+
+
+def test_no_match_equation_identifier():
+    """Equation identifiers like 'eq1', 'equation2' should NOT get <sup> tags."""
+    text = "Using eq1. The formula in equation3 shows."
+    result = detect_superscripts(text)
+    assert "eq1" in result
+    assert "equation3" in result
+    assert "eq<sup>" not in result
+    assert "equation<sup>" not in result
+
+
+def test_no_match_supplementary_identifier():
+    """Supplementary identifiers like 'supp1' should NOT get <sup> tags."""
+    text = "Additional data in supp1. See supplementary2 for details."
+    result = detect_superscripts(text)
+    assert "supp1" in result
+    assert "supplementary2" in result
+    assert "supp<sup>" not in result
+    assert "supplementary<sup>" not in result
+
+
 # --- Preserves surrounding text ---
 
 def test_preserves_surrounding_text():
