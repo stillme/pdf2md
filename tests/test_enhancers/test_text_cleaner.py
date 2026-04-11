@@ -152,6 +152,72 @@ def test_preserves_short_non_sentence_blocks():
     assert "Foundation models" in cleaned
 
 
+def test_removes_isolated_figure_title_between_sentence_fragments():
+    text = (
+        "regions of tissue were associated with a unique transcriptional program,\n"
+        "Upregulated genes in the middle colon\n"
+        "\n"
+        "we compared high- with low-expressing regions of Ido1."
+    )
+
+    cleaned = clean_figure_text(text)
+
+    assert "Upregulated genes in the middle colon" not in cleaned
+    assert "unique transcriptional program" in cleaned
+    assert "we compared high" in cleaned
+
+
+def test_preserves_image_marker_between_sentence_fragments():
+    text = (
+        "regions of tissue were associated with a unique transcriptional program,\n"
+        "![Figure 2](fig2)\n"
+        "\n"
+        "we compared high- with low-expressing regions of Ido1."
+    )
+
+    cleaned = clean_figure_text(text)
+
+    assert "![Figure 2](fig2)" in cleaned
+    assert "we compared high" in cleaned
+
+
+def test_removes_cell_state_axis_label_block():
+    text = (
+        "We identified the adapted subset in the middle colon.\n"
+        "in prevalence log2FC in prevalence\n"
+        "A B C D A B C D A B C D\n"
+        "Percentage of cells\n"
+        "Stem/TA cells Immature enterocytes I Immature enterocytes II Mature enterocytes I\n"
+        "SPF GF FMT\n"
+        "A B C D A B C D A B C D\n"
+        "Ccn3-hi GCs Reg4+ GCs I Reg4+ GCs II\n"
+        "The next body sentence remains."
+    )
+
+    cleaned = clean_figure_text(text)
+
+    assert "in prevalence log2FC" not in cleaned
+    assert "Percentage of cells" not in cleaned
+    assert "SPF GF FMT" not in cleaned
+    assert "Ccn3-hi GCs" not in cleaned
+    assert "We identified the adapted subset" in cleaned
+    assert "The next body sentence remains." in cleaned
+
+
+def test_removes_single_cell_state_axis_label_line():
+    text = (
+        "Our spatial mapping results matched expected spatial assignment.\n"
+        "Stem/TA cells Immature enterocytes I Immature enterocytes II Mature enterocytes I Mature enterocytes II\n"
+        "subsets of each lineage were differentially enriched."
+    )
+
+    cleaned = clean_figure_text(text)
+
+    assert "Stem/TA cells" not in cleaned
+    assert "Our spatial mapping results" in cleaned
+    assert "subsets of each lineage" in cleaned
+
+
 def test_preserves_author_blocks():
     """Author name blocks with affiliations should NOT be removed."""
     text = (

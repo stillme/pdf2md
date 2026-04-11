@@ -10,6 +10,8 @@ _NEXT_PAGE_CAPTION_RE = re.compile(
     r"^\s*see\s+(?:the\s+)?next\s+page\s+for\s+caption\.?\s*$",
     re.IGNORECASE,
 )
+_FIGURE_MARKER_RE = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
+_CAPTION_HEADER_RE = re.compile(r"^(?:Extended Data\s+)?Fig\.\s+\d+\s+\|")
 
 
 def extract_figure_captions(markdown: str) -> list[dict]:
@@ -79,6 +81,8 @@ def extract_figure_captions(markdown: str) -> list[dict]:
                 "caption": caption_text,
                 "is_extended": is_extended,
                 "full_match": full_match,
+                "start_line": i,
+                "end_line": j,
             })
             i = j
         else:
@@ -169,6 +173,57 @@ def sync_caption_alt_text(markdown: str, figures: list[Figure], captions: list[d
     return markdown
 
 
+def remove_caption_text_blocks(markdown: str, captions: list[dict]) -> str:
+    """Remove extracted caption blocks from body prose before reinserting by figure."""
+    if not captions:
+        return markdown
+
+    ranges = [
+        (cap["start_line"], cap["end_line"])
+        for cap in captions
+        if "start_line" in cap and "end_line" in cap
+    ]
+    if not ranges:
+        return markdown
+
+    lines = markdown.split("\n")
+    removed = set()
+    for start, end in ranges:
+        removed.update(range(start, end))
+
+    kept = [line for idx, line in enumerate(lines) if idx not in removed]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(kept))
+
+
+def insert_caption_text_blocks(
+    markdown: str,
+    figures: list[Figure],
+    captions: list[dict],
+) -> str:
+    """Insert full caption text directly after the matched figure marker."""
+    if not captions or not figures:
+        return markdown
+
+    caption_by_figure_id = {
+        fig.id: _caption_block_text(cap)
+        for fig, cap in _caption_figure_pairs(figures, captions, only_uncaptioned=False)
+    }
+    if not caption_by_figure_id:
+        return markdown
+
+    lines: list[str] = []
+    for line in markdown.split("\n"):
+        lines.append(line)
+        marker_match = _FIGURE_MARKER_RE.match(line.strip())
+        if marker_match:
+            caption_text = caption_by_figure_id.get(marker_match.group(1))
+            if caption_text:
+                lines.extend(["", caption_text, ""])
+
+    markdown = _move_interrupting_figure_blocks(re.sub(r"\n{3,}", "\n\n", "\n".join(lines)))
+    return _remove_spurious_paragraph_breaks(markdown)
+
+
 def _caption_figure_pairs(
     figures: list[Figure],
     captions: list[dict],
@@ -221,3 +276,123 @@ def _caption_alt_text(caption: dict) -> str:
     if panel_start:
         caption_text = caption_text[:panel_start.start() + 1]
     return f"{prefix} {caption['fig_num']} | {caption_text}"
+
+
+def _caption_block_text(caption: dict) -> str:
+    prefix = "Extended Data Fig." if caption["is_extended"] else "Fig."
+    caption_text = re.sub(r"\s+", " ", caption["caption"]).strip().replace("]", ")")
+    return f"{prefix} {caption['fig_num']} | {caption_text}"
+
+
+def _move_interrupting_figure_blocks(markdown: str) -> str:
+    """Move figure blocks after a sentence when they interrupt it."""
+    lines = markdown.split("\n")
+    i = 0
+    while i < len(lines):
+        if not _FIGURE_MARKER_RE.match(lines[i].strip()):
+            i += 1
+            continue
+
+        block_start = i
+        block_end = _figure_block_group_end(lines, block_start)
+        prev_idx = _previous_nonblank(lines, block_start)
+        next_idx = _next_nonblank(lines, block_end)
+
+        if (
+            prev_idx is not None
+            and next_idx is not None
+            and _line_continues_sentence(lines[prev_idx].strip(), lines[next_idx].strip())
+        ):
+            block = lines[block_start:block_end]
+            del lines[block_start:block_end]
+
+            insert_at = block_start
+            while insert_at < len(lines):
+                stripped = lines[insert_at].strip()
+                if not stripped or stripped.startswith("#") or _FIGURE_MARKER_RE.match(stripped):
+                    break
+                insert_at += 1
+                if _line_ends_sentence(stripped):
+                    break
+
+            block = _trim_blank_edges(block)
+            lines[insert_at:insert_at] = ["", *block, ""]
+            i = max(0, block_start - 1)
+        else:
+            i = block_end
+
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+
+
+def _figure_block_end(lines: list[str], start: int) -> int:
+    end = start + 1
+    if end < len(lines) and not lines[end].strip():
+        end += 1
+    if end < len(lines) and _CAPTION_HEADER_RE.match(lines[end].strip()):
+        end += 1
+    while end < len(lines) and not lines[end].strip():
+        end += 1
+    return end
+
+
+def _figure_block_group_end(lines: list[str], start: int) -> int:
+    """Return the end of consecutive figure+caption blocks."""
+    end = _figure_block_end(lines, start)
+    while end < len(lines) and _FIGURE_MARKER_RE.match(lines[end].strip()):
+        end = _figure_block_end(lines, end)
+    return end
+
+
+def _previous_nonblank(lines: list[str], start: int) -> int | None:
+    for idx in range(start - 1, -1, -1):
+        if lines[idx].strip():
+            return idx
+    return None
+
+
+def _next_nonblank(lines: list[str], start: int) -> int | None:
+    for idx in range(start, len(lines)):
+        if lines[idx].strip():
+            return idx
+    return None
+
+
+def _line_continues_sentence(before: str, after: str) -> bool:
+    if not before or before.startswith("#") or _FIGURE_MARKER_RE.match(before):
+        return False
+    if not after or after.startswith("#") or _FIGURE_MARKER_RE.match(after):
+        return False
+    return before[-1] not in '.!?:;"\')' and after[0].islower()
+
+
+def _line_ends_sentence(line: str) -> bool:
+    return bool(line) and line[-1] in '.!?:;"\')'
+
+
+def _trim_blank_edges(lines: list[str]) -> list[str]:
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return lines
+
+
+def _remove_spurious_paragraph_breaks(markdown: str) -> str:
+    lines = markdown.split("\n")
+    cleaned: list[str] = []
+    for i, line in enumerate(lines):
+        if line.strip() or not cleaned or i + 1 >= len(lines):
+            cleaned.append(line)
+            continue
+
+        prev = cleaned[-1].strip()
+        next_line = lines[i + 1].strip()
+        if (
+            prev
+            and next_line
+            and prev[-1] not in '.!?:;"\')'
+            and next_line[0].islower()
+        ):
+            continue
+        cleaned.append(line)
+    return "\n".join(cleaned)

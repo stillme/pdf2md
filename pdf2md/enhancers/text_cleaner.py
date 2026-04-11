@@ -32,6 +32,13 @@ _SENTENCE_WORDS = {
     'suggests', 'demonstrate', 'demonstrates', 'reveal', 'reveals',
     'found', 'observed', 'identified', 'performed', 'used', 'using',
 }
+_PROSE_SIGNAL_WORDS = {
+    'is', 'are', 'was', 'were', 'have', 'has', 'had', 'we', 'our',
+    'this', 'these', 'those', 'that', 'which', 'show', 'shows', 'shown',
+    'indicate', 'indicates', 'suggest', 'suggests', 'demonstrate',
+    'demonstrates', 'reveal', 'reveals', 'found', 'observed',
+    'identified', 'performed', 'used', 'using',
+}
 
 _NEXT_PAGE_CAPTION_LINE_RE = re.compile(
     r'^\s*(?:Extended Data\s+)?Fig(?:ure)?\.?\s*\d+\s*[|.:]\s*'
@@ -50,6 +57,11 @@ _LEGEND_DETAIL_SENTENCE_RE = re.compile(
 _LEGEND_DETAIL_PAREN_RE = re.compile(
     r'\s*\([^)]*(?:biological replicates?|representative of n\s*=|'
     r'error bars represent|scale bars?,)[^)]*\)',
+    re.IGNORECASE,
+)
+_CELL_STATE_LABEL_RE = re.compile(
+    r'(?:Stem/TA|Immature enterocytes|Mature enterocytes|Reg4\+\s+GCs|'
+    r'Spink1-hi\s+GCs|Ccn3-hi\s+GCs|Car8\+)',
     re.IGNORECASE,
 )
 
@@ -131,13 +143,60 @@ def _has_strong_sentence_structure(line: str) -> bool:
 
     words = stripped.lower().split()
     count = 0
+    has_prose_signal = False
     for w in words:
         clean = w.strip('.,;:!?()[]{}"\'-')
         if clean in _SENTENCE_WORDS:
             count += 1
-            if count >= 2:
-                return True
-    return False
+            has_prose_signal = has_prose_signal or clean in _PROSE_SIGNAL_WORDS
+    return count >= 2 and has_prose_signal
+
+
+def _previous_nonblank(lines: list[str], start: int) -> int | None:
+    for idx in range(start - 1, -1, -1):
+        if lines[idx].strip():
+            return idx
+    return None
+
+
+def _next_nonblank(lines: list[str], start: int) -> int | None:
+    for idx in range(start + 1, len(lines)):
+        if lines[idx].strip():
+            return idx
+    return None
+
+
+def _is_isolated_figure_title(lines: list[str], idx: int) -> bool:
+    stripped = lines[idx].strip()
+    if (
+        not stripped
+        or stripped.startswith('![')
+        or len(stripped) > 60
+        or stripped.endswith(('.', ':', ';'))
+        or _has_strong_sentence_structure(stripped)
+    ):
+        return False
+
+    prev_idx = _previous_nonblank(lines, idx)
+    next_idx = _next_nonblank(lines, idx)
+    if prev_idx is None or next_idx is None:
+        return False
+
+    prev = lines[prev_idx].strip()
+    next_line = lines[next_idx].strip()
+    return bool(
+        prev
+        and next_line
+        and prev[-1] not in '.!?:;"\')'
+        and next_line[0].islower()
+    )
+
+
+def _is_cell_state_label_line(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped or stripped.endswith(('.', ';', ':')):
+        return False
+    return len(_CELL_STATE_LABEL_RE.findall(stripped)) >= 2
 
 
 def _is_figure_leak_block(lines: list[str], start: int, min_block_size: int = 3) -> tuple[bool, int]:
@@ -152,6 +211,8 @@ def _is_figure_leak_block(lines: list[str], start: int, min_block_size: int = 3)
     """
     first_stripped = lines[start].strip()
     if not first_stripped:
+        return False, start
+    if first_stripped.startswith('!['):
         return False, start
     # Strong sentence check: lines with 2+ sentence words are real prose
     if _has_strong_sentence_structure(first_stripped):
@@ -172,8 +233,9 @@ def _is_figure_leak_block(lines: list[str], start: int, min_block_size: int = 3)
         # Lines with strong sentence structure (2+ sentence words) break the block
         if _has_strong_sentence_structure(stripped):
             break
-        # Lines >60 chars that aren't gene-like labels break the block
-        if len(stripped) > 60 and not _is_figure_label_line(stripped):
+        # Very long lines are likely prose unless they have already started in
+        # a figure-label block. Category/axis rows can be moderately long.
+        if len(stripped) > 140 and not _is_figure_label_line(stripped):
             break
         total += 1
         if len(stripped) < 15:
@@ -227,6 +289,14 @@ def clean_figure_text(text: str) -> str:
         stripped = lines[i].strip()
         if not stripped:
             result.append(lines[i])
+            i += 1
+            continue
+
+        if _is_isolated_figure_title(lines, i):
+            i += 1
+            continue
+
+        if _is_cell_state_label_line(stripped):
             i += 1
             continue
 

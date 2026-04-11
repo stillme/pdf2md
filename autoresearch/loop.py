@@ -222,7 +222,8 @@ def _dimension_description(dim: str) -> str:
         ),
         "figure_captions": (
             "Main figure captions (Fig. 1 through Fig. 5) and Extended Data captions (Extended Data Fig. 1-10) "
-            "should appear as the alt text in figure image markers: ![Fig. 1 | caption...](figN). "
+            "should appear as figure image alt text and as an explicit full caption block immediately near "
+            "the matched figure marker. "
             "Figures should not keep 'See next page for caption' placeholders as captions. "
             "The caption matching in enhancers/captions.py should use spatial proximity or page order "
             "to associate captions with the correct images."
@@ -236,8 +237,9 @@ def _dimension_description(dim: str) -> str:
         "legend_separation": (
             "Figure legend/statistical text like 'Scale bar, 1000 um', 'representative of n = 5 "
             "biological replicates', 'See next page for caption' is appearing in the body text. "
-            "This text should be in figure captions or stripped. The text_cleaner.py or assembler.py "
-            "needs to detect and separate figure legend text from body prose."
+            "This text should be preserved inside matched figure caption blocks or stripped from body prose. "
+            "The text_cleaner.py, captions.py, or assembler.py needs to detect and separate figure legend "
+            "text from body prose without dropping real caption content."
         ),
         "body_coherence": (
             "Body text should flow as coherent prose without figure-related interruptions. "
