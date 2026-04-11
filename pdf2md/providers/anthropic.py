@@ -8,7 +8,7 @@ import httpx
 class AnthropicProvider:
     """Anthropic Claude provider via the Messages REST API."""
 
-    _DEFAULT_MODEL = "claude-sonnet-4-5-20250514"
+    _DEFAULT_MODEL = "claude-haiku-4-5-20251001"
     _BASE_URL = "https://api.anthropic.com/v1/messages"
     _API_VERSION = "2023-06-01"
 

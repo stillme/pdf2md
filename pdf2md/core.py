@@ -10,6 +10,7 @@ from typing import Sequence
 import pypdfium2 as pdfium
 
 from pdf2md.assembler import assemble_markdown
+from pdf2md.confidence import rescore_document
 from pdf2md.config import Config, FigureMode, Tier
 from pdf2md.document import Document
 from pdf2md.enhancers.captions import (
@@ -308,13 +309,16 @@ def convert(
                 page_image = _render_page_image(pdf_bytes, page_idx_eq)
                 if page_image is None:
                     continue
-                eqs = extract_equations_vlm(
-                    page_image=page_image,
-                    page_text=page_text,
-                    provider=vlm,
-                    page_number=page_idx_eq,
-                )
-                all_equations.extend(eqs)
+                try:
+                    eqs = extract_equations_vlm(
+                        page_image=page_image,
+                        page_text=page_text,
+                        provider=vlm,
+                        page_number=page_idx_eq,
+                    )
+                    all_equations.extend(eqs)
+                except Exception as e:
+                    print(f"  VLM equation extraction failed for page {page_idx_eq}: {e}")
             if all_equations:
                 doc = doc.model_copy(update={"equations": all_equations})
 
@@ -354,6 +358,12 @@ def convert(
     doc = doc.model_copy(update={
         "figure_index": build_figure_index(doc.markdown, doc.figures),
     })
+
+    # Rescore page confidences based on actual extraction results.
+    # Replaces the crude text-length heuristic with content-aware scoring:
+    # figure pages get credit for extracted images, text pages for prose quality.
+    page_texts = [p.text for p in all_pages]
+    doc = rescore_document(doc, page_texts)
 
     # Stamp tier and timing
     elapsed_ms = int((time.monotonic() - t0) * 1000)

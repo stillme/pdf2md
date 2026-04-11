@@ -16,7 +16,7 @@ def detect_providers() -> list[dict]:
         "name": "anthropic",
         "available": bool(os.environ.get("ANTHROPIC_API_KEY")),
         "env_var": "ANTHROPIC_API_KEY",
-        "default_model": "claude-sonnet-4-5-20250514",
+        "default_model": "claude-haiku-4-5-20251001",
     })
     providers.append({
         "name": "openai",
@@ -52,7 +52,7 @@ def get_provider(provider_string: str | None = None) -> VLMProvider | None:
         provider_name = found["name"]
         model = found["default_model"]
 
-    if provider_name == "gemini":
+    if provider_name in ("gemini", "google"):
         from pdf2md.providers.gemini import GeminiProvider
         return GeminiProvider(model=model)
     elif provider_name == "anthropic":
