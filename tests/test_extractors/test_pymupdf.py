@@ -8,6 +8,17 @@ except ImportError:
     HAS_PYMUPDF = False
 
 
+def test_leading_bold_text_stops_at_first_regular_span():
+    from pdf2md.extractors.pymupdf_ext import _leading_bold_text
+
+    spans = [
+        {"text": "Spatial transcriptomics data processing.", "flags": 16, "font": "SemiBold"},
+        {"text": " Raw Visium datasets were", "flags": 4, "font": "Regular"},
+    ]
+
+    assert _leading_bold_text(spans) == "Spatial transcriptomics data processing."
+
+
 @pytest.mark.skipif(not HAS_PYMUPDF, reason="pymupdf not installed")
 class TestPymupdfExtractor:
     def test_name(self):

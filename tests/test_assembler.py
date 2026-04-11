@@ -227,6 +227,50 @@ def test_bold_headings_no_duplicates_with_regex():
     assert titles.count("Introduction") == 1
 
 
+def test_bold_run_in_heading_preserves_remainder():
+    """Run-in bold headings should not discard non-bold text on the same line."""
+    pages = [
+        PageContent(
+            page_number=0,
+            text=(
+                "Spatial transcriptomics data processing. "
+                "Raw Visium datasets were processed."
+            ),
+            tables=[], figures=[], confidence=0.9,
+        ),
+    ]
+    bold_headings = [
+        {
+            "text": "Spatial transcriptomics data processing.",
+            "page": 0,
+            "font_size": 8.25,
+        },
+    ]
+    result = assemble_markdown(pages, bold_headings=bold_headings)
+
+    assert "## Spatial transcriptomics data processing." in result.markdown
+    assert "Raw Visium datasets were processed." in result.markdown
+    assert "Spatial transcriptomics data processing. Raw" not in result.markdown
+
+
+def test_removes_blank_line_before_lowercase_continuation():
+    pages = [
+        PageContent(
+            page_number=0,
+            text=(
+                "we compared effect\n"
+                "\n"
+                "sizes for DEGs identified in the comparison."
+            ),
+            tables=[], figures=[], confidence=0.9,
+        ),
+    ]
+    result = assemble_markdown(pages)
+
+    assert "effect\nsizes" in result.markdown
+    assert "effect\n\nsizes" not in result.markdown
+
+
 def test_bold_headings_none_is_noop():
     """Passing no bold_headings should work the same as before."""
     pages = [

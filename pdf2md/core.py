@@ -12,7 +12,12 @@ import pypdfium2 as pdfium
 from pdf2md.assembler import assemble_markdown
 from pdf2md.config import Config, FigureMode, Tier
 from pdf2md.document import Document
-from pdf2md.enhancers.captions import extract_figure_captions, extract_panel_references, match_captions_to_figures
+from pdf2md.enhancers.captions import (
+    extract_figure_captions,
+    extract_panel_references,
+    match_captions_to_figures,
+    sync_caption_alt_text,
+)
 from pdf2md.enhancers.figures import enhance_figures
 from pdf2md.enhancers.math import convert_unicode_math, detect_math_regions, extract_equations_vlm
 from pdf2md.enhancers.metadata import extract_metadata
@@ -234,8 +239,10 @@ def convert(
     # Extract and match figure captions from the assembled markdown
     captions = extract_figure_captions(doc.markdown)
     if captions and doc.figures:
+        matched_figures = match_captions_to_figures(doc.figures, captions)
         doc = doc.model_copy(update={
-            "figures": match_captions_to_figures(doc.figures, captions),
+            "figures": matched_figures,
+            "markdown": sync_caption_alt_text(doc.markdown, matched_figures, captions),
         })
 
     # Store panel references as metadata (available via doc internals)

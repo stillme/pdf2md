@@ -18,6 +18,26 @@ _AUTHOR_RE = re.compile(r"^[A-Z][a-z]+ [A-Z][a-z]+(?:,\s*[A-Z][a-z]+ [A-Z][a-z]+
 _SUPERSCRIPT_RE = re.compile(r"^\d+[,\s\d]*$")
 
 
+def _is_bold_span(span: dict) -> bool:
+    """Return whether a PyMuPDF text span is bold or semibold."""
+    flags = span.get("flags", 0)
+    font_name = span.get("font", "").lower()
+    return bool(flags & (1 << 4)) or "bold" in font_name or "semibold" in font_name
+
+
+def _leading_bold_text(spans: list[dict]) -> str:
+    """Return the contiguous bold text at the start of a line."""
+    parts: list[str] = []
+    for span in spans:
+        text = span.get("text", "")
+        if not text:
+            continue
+        if not _is_bold_span(span):
+            break
+        parts.append(text)
+    return "".join(parts).strip()
+
+
 class PymupdfExtractor:
     """Extractor backed by PyMuPDF (fitz) — fast text + image extraction."""
 
@@ -144,19 +164,13 @@ class PymupdfExtractor:
                     if not spans:
                         continue
 
-                    line_text = "".join(s.get("text", "") for s in spans).strip()
+                    line_text = _leading_bold_text(spans)
 
                     if len(line_text) < 3 or len(line_text) > 80:
                         continue
 
                     first_span = spans[0]
-                    flags = first_span.get("flags", 0)
-                    is_bold = bool(flags & (1 << 4))
-                    font_name = first_span.get("font", "")
-                    if not is_bold:
-                        is_bold = "Bold" in font_name
-
-                    if not is_bold:
+                    if not _is_bold_span(first_span):
                         continue
 
                     font_size = float(first_span.get("size", 0.0))
@@ -167,6 +181,8 @@ class PymupdfExtractor:
                     # (not a URL, not an author list, not a figure caption)
                     if font_size < body_size - 0.5:
                         continue  # smaller than body = definitely not a heading
+                    if font_size > body_size * 2:
+                        continue  # title text, not a section heading
 
                     if not line_text[0].isupper():
                         continue

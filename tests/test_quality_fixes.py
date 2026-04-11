@@ -30,6 +30,13 @@ class TestSoftHyphenRemoval:
         assert "\xad" not in result
         assert "microbiota" in result
 
+    def test_rejoins_pdf_control_hyphen_marker(self):
+        text = "faecal micro\x02biota transplant and microbiota\x02driven adaptation"
+        result = _clean_hyphens(text)
+        assert "\x02" not in result
+        assert "faecal microbiota transplant" in result
+        assert "microbiota-driven" in result
+
     def test_rejoins_uffbe_compound_across_lines(self):
         """Compound word at line break with U+FFBE keeps the hyphen."""
         text = "microbiota\uffbe\ndriven adaptation"
@@ -46,6 +53,11 @@ class TestSoftHyphenRemoval:
         text = "environ-\nmental pressures"
         result = _clean_hyphens(text)
         assert "environmental" in result
+
+    def test_rejoins_follicles_hyphenated_break(self):
+        text = "Patches and immune fol-\nlicles were removed"
+        result = _clean_hyphens(text)
+        assert "immune follicles" in result
 
     def test_preserves_real_hyphens(self):
         """Hyphens NOT at line breaks should be preserved."""

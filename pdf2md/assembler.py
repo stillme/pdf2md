@@ -132,6 +132,10 @@ def _clean_hyphens(text: str) -> str:
     """
     # Remove soft hyphen character (U+00AD)
     text = text.replace('\xad', '')
+    # PyMuPDF can emit U+0002 where a PDF line-break hyphen was encoded.
+    # Treat it like a hyphenation marker and let the same prefix/suffix rules decide.
+    text = re.sub(r'(\w+)\x02\s*\n?\s*(\w+)', _rejoin_hyphen, text)
+    text = text.replace('\x02', '')
     # Rejoin words split by replacement chars across line breaks
     # Uses the same prefix/suffix awareness as regular hyphens
     text = re.sub(r'(\w+)[\uffbe\ufffe]\s*\n\s*(\w+)', _rejoin_hyphen, text)
@@ -168,7 +172,7 @@ _SUFFIX_STARTS = (
     'ical', 'ular', 'ally', 'ling', 'ious', 'eous', 'ation',
     'ity', 'ous', 'ive', 'ful', 'ize', 'ise', 'ial', 'ory', 'ary',
     'ery', 'ure', 'age', 'ism', 'ist', 'ate', 'ing', 'ual', 'tic',
-    'ent', 'ant',
+    'ent', 'ant', 'licle',
 )
 
 # Suffix patterns at the END of the second word that indicate it's a
@@ -232,6 +236,27 @@ def _clean_page_text(text: str, repeated_lines: set[str]) -> str:
         # Check standalone article type lines in first 3 lines
         if i < 3 and _ARTICLE_TYPE_RE.match(stripped):
             continue
+        cleaned.append(line)
+    return "\n".join(cleaned)
+
+
+def _remove_spurious_paragraph_breaks(markdown: str) -> str:
+    """Remove blank lines that split a lowercase continuation from its paragraph."""
+    lines = markdown.splitlines()
+    cleaned: list[str] = []
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped and cleaned and i + 1 < len(lines):
+            prev = cleaned[-1].strip()
+            next_line = lines[i + 1].strip()
+            if (
+                prev
+                and not prev.startswith("#")
+                and not prev.startswith("![")
+                and next_line
+                and next_line[0].islower()
+            ):
+                continue
         cleaned.append(line)
     return "\n".join(cleaned)
 
@@ -336,6 +361,7 @@ def assemble_markdown(
         for line in page_lines:
             stripped = line.strip()
             heading_info = _is_heading(stripped)
+            heading_remainder: str | None = None
 
             # If regex didn't detect a heading, check if this line matches
             # a bold heading for this page (fuzzy: substring match)
@@ -350,6 +376,8 @@ def assemble_markdown(
                         )
                         if not already_found:
                             heading_info = {"text": bold_text, "level": 1}
+                            if stripped.startswith(bold_text):
+                                heading_remainder = stripped[len(bold_text):].lstrip()
                         break
 
             if heading_info is not None:
@@ -369,6 +397,9 @@ def assemble_markdown(
                 # Map level to markdown heading: 1 -> ##, 2 -> ###, 3 -> ####
                 md_level = "#" * (heading_info["level"] + 1)
                 page_md_parts.append(f"\n{md_level} {heading_info['text']}\n")
+                if heading_remainder:
+                    current_content_lines.append(heading_remainder)
+                    page_md_parts.append(heading_remainder)
             else:
                 current_content_lines.append(line)
                 if stripped:
@@ -451,6 +482,7 @@ def assemble_markdown(
 
     # Clean up excessive blank lines
     full_markdown = re.sub(r"\n{3,}", "\n\n", full_markdown)
+    full_markdown = _remove_spurious_paragraph_breaks(full_markdown)
 
     # Calculate average confidence
     avg_confidence = 0.0

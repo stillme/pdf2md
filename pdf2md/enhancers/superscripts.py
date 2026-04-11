@@ -27,10 +27,16 @@ _SINGLE_REF_RE = re.compile(
 # Gene names, chemical formulae, and identifiers with digits should NOT
 # be treated as having superscript suffixes.
 _GENE_LIKE_RE = re.compile(
-    r'(?:^|(?<=\s))'               # word boundary
-    r'[A-Z][a-z]*\d+[a-z]?\d*'    # CamelCase + digits (Ang4, Defa21, Slc10a2)
-    r'(?=\s|$|[,.])'
+    r'(?<![A-Za-z])'
+    r'[A-Z][a-z]+\d+[a-z]?\d*'
+    r'(?:[,\u2013-]\d+)*'
+    r'(?=$|[^A-Za-z0-9])'
 )
+
+_AUTHOR_NAMES = {
+    'Mayassi', 'Li', 'Segerstolpe', 'Brown', 'Weisberg',
+    'Nakata', 'Yano', 'Herbst', 'Artis', 'Graham', 'Xavier',
+}
 
 # Known identifier prefixes that should NOT have trailing digits superscripted.
 # Patterns like "fig1", "table2", "equation3", "supp1", etc. should remain as-is.
@@ -57,13 +63,34 @@ def detect_superscripts(text: str) -> str:
     Does NOT touch gene names (Ang4, Defa21), chemical formulae, or
     numbers that are part of identifiers.
     """
+    text, protected = _protect_gene_like_tokens(text)
+
     # Pattern 1: multi-digit with separators (high confidence)
     text = _MULTI_REF_RE.sub(r'\1<sup>\2</sup>', text)
 
     # Pattern 2: single-digit after lowercase words at boundaries
     text = _SINGLE_REF_RE.sub(_single_ref_replace, text)
 
+    for placeholder, original in protected.items():
+        text = text.replace(placeholder, original)
+
     return text
+
+
+def _protect_gene_like_tokens(text: str) -> tuple[str, dict[str, str]]:
+    """Temporarily protect CamelCase gene identifiers before citation wrapping."""
+    protected: dict[str, str] = {}
+
+    def replace(match: re.Match) -> str:
+        token = match.group(0)
+        name_match = re.match(r'[A-Z][a-z]+', token)
+        if name_match and name_match.group(0) in _AUTHOR_NAMES:
+            return token
+        placeholder = f'@@PDF2MDGENE{len(protected)}@@'
+        protected[placeholder] = token
+        return placeholder
+
+    return _GENE_LIKE_RE.sub(replace, text), protected
 
 
 def _single_ref_replace(m: re.Match) -> str:

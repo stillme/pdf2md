@@ -33,6 +33,26 @@ _SENTENCE_WORDS = {
     'found', 'observed', 'identified', 'performed', 'used', 'using',
 }
 
+_NEXT_PAGE_CAPTION_LINE_RE = re.compile(
+    r'^\s*(?:Extended Data\s+)?Fig(?:ure)?\.?\s*\d+\s*[|.:]\s*'
+    r'See\s+(?:the\s+)?next\s+page\s+for\s+caption\.?\s*$',
+    re.IGNORECASE,
+)
+
+_LEGEND_DETAIL_SENTENCE_RE = re.compile(
+    r'(?:(?<=^)|(?<=[.!?])\s+)'
+    r'[^.!?\n]*'
+    r'(?:processed using imagej|representative of n\s*=|biological replicates?|'
+    r'error bars represent|scale bars?,)'
+    r'[^.!?\n]*(?:[.!?]|$)',
+    re.IGNORECASE,
+)
+_LEGEND_DETAIL_PAREN_RE = re.compile(
+    r'\s*\([^)]*(?:biological replicates?|representative of n\s*=|'
+    r'error bars represent|scale bars?,)[^)]*\)',
+    re.IGNORECASE,
+)
+
 
 def _is_figure_label_line(line: str) -> bool:
     """Determine if a single line looks like a figure element label.
@@ -190,12 +210,25 @@ def clean_figure_text(text: str) -> str:
 
     Real content is preserved — only strips when high confidence of figure-leak.
     """
+    text = _LEGEND_DETAIL_PAREN_RE.sub("", text)
     lines = text.split('\n')
     result: list[str] = []
     i = 0
 
     while i < len(lines):
         stripped = lines[i].strip()
+
+        if _NEXT_PAGE_CAPTION_LINE_RE.match(stripped):
+            i += 1
+            continue
+
+        lines[i] = _LEGEND_DETAIL_PAREN_RE.sub("", lines[i])
+        lines[i] = _LEGEND_DETAIL_SENTENCE_RE.sub("", lines[i]).strip()
+        stripped = lines[i].strip()
+        if not stripped:
+            result.append(lines[i])
+            i += 1
+            continue
 
         # Check if this starts a figure-leak block (3+ consecutive short lines)
         is_block, block_end = _is_figure_leak_block(lines, i)

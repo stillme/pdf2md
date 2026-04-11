@@ -81,6 +81,13 @@ def test_no_match_gene_name_il17():
     assert "<sup>" not in result
 
 
+def test_no_match_camelcase_gene_with_multi_reference_shape():
+    """CamelCase genes with comma-separated digits should not look like citations."""
+    text = "Calca38,41 Hoxb13 Itln1 Tcf7l1 were measured."
+    result = detect_superscripts(text)
+    assert result == text
+
+
 def test_no_match_short_words():
     """Words shorter than 3 lowercase chars shouldn't trigger single-ref."""
     text = "in2. or3."

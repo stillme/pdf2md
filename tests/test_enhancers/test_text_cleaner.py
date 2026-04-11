@@ -182,3 +182,48 @@ def test_preserves_real_prose_with_mixed_sentence_words():
     cleaned = clean_figure_text(text)
     # All lines have 2+ sentence words — nothing should be removed
     assert text == cleaned
+
+
+def test_removes_next_page_caption_placeholders():
+    text = (
+        "Body text before.\n"
+        "Extended Data Fig. 1 | See next page for caption.\n"
+        "![Figure 6](fig6)\n"
+        "Body text after."
+    )
+
+    cleaned = clean_figure_text(text)
+
+    assert "See next page for caption" not in cleaned
+    assert "![Figure 6](fig6)" in cleaned
+    assert "Body text before" in cleaned
+    assert "Body text after" in cleaned
+
+
+def test_removes_legend_statistical_sentences():
+    text = (
+        "Fig. 2 | Example caption. Processed using ImageJ and representative of "
+        "n = 5 biological replicates. Scale bar, 1,000 um.\n"
+        "The next body sentence remains."
+    )
+
+    cleaned = clean_figure_text(text)
+
+    assert "Processed using ImageJ" not in cleaned
+    assert "biological replicates" not in cleaned
+    assert "Scale bar" not in cleaned
+    assert "Fig. 2 | Example caption." in cleaned
+    assert "The next body sentence remains." in cleaned
+
+
+def test_removes_legend_statistical_parentheticals():
+    text = (
+        "Fig. 10 | Caption title. Boxplots showing the fraction of each cluster "
+        "(3 biological replicates per box). Expression of marker genes follows."
+    )
+
+    cleaned = clean_figure_text(text)
+
+    assert "biological replicates" not in cleaned
+    assert "Boxplots showing the fraction" in cleaned
+    assert "Expression of marker genes follows" in cleaned

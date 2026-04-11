@@ -6,6 +6,11 @@ import re
 
 from pdf2md.document import Figure
 
+_NEXT_PAGE_CAPTION_RE = re.compile(
+    r"^\s*see\s+(?:the\s+)?next\s+page\s+for\s+caption\.?\s*$",
+    re.IGNORECASE,
+)
+
 
 def extract_figure_captions(markdown: str) -> list[dict]:
     """Extract figure captions/legends from markdown text.
@@ -133,68 +138,86 @@ def match_captions_to_figures(
     figures: list[Figure],
     captions: list[dict],
 ) -> list[Figure]:
-    """Match extracted captions to Figure objects by figure number and page ordering.
+    """Match extracted captions to Figure objects by figure number and page order.
 
     Strategy:
     1. Parse caption figure numbers; separate main from Extended Data captions.
-    2. Sort uncaptioned figures by page order (preserving extraction order within page).
-    3. Group figures: the N largest (by image data size, as proxy for main figures)
-       are treated as main figures; the rest are Extended Data or supplementary.
-    4. Match main caption N to the Nth main figure by page order.
+    2. Prefer real duplicate captions over "See next page for caption" placeholders.
+    3. Sort uncaptioned figures by page order (preserving extraction order within page).
+    4. Match main captions to the first figures by page order.
     5. Match Extended Data captions to remaining figures by page order.
     """
     if not captions or not figures:
         return figures
 
-    # Separate captions into main and extended
-    main_caps = sorted(
-        [c for c in captions if not c["is_extended"]],
-        key=lambda c: c["fig_num"],
-    )
-    ext_caps = sorted(
-        [c for c in captions if c["is_extended"]],
-        key=lambda c: c["fig_num"],
-    )
-
-    # Figures without captions, in page order (preserving extraction order)
-    uncaptioned = [f for f in figures if not f.caption]
-
-    if not uncaptioned:
-        return figures
-
-    n_main = len(main_caps)
-
-    if n_main > 0 and len(uncaptioned) > n_main:
-        # Sort uncaptioned by size (largest = main figures)
-        # Use image_base64 length as a proxy for image size
-        def _fig_size(f: Figure) -> int:
-            if f.image_base64:
-                return len(f.image_base64)
-            return 0
-
-        # Identify main figures as the N largest by image size
-        sized = sorted(uncaptioned, key=_fig_size, reverse=True)
-        main_figs = sized[:n_main]
-        ext_figs = sized[n_main:]
-
-        # Sort main figures back by page order for matching
-        main_figs.sort(key=lambda f: (f.page, figures.index(f)))
-        ext_figs.sort(key=lambda f: (f.page, figures.index(f)))
-
-        # Match main captions to main figures by order
-        for i, cap in enumerate(main_caps):
-            if i < len(main_figs):
-                main_figs[i].caption = cap["caption"]
-
-        # Match extended captions to remaining figures by order
-        for i, cap in enumerate(ext_caps):
-            if i < len(ext_figs):
-                ext_figs[i].caption = cap["caption"]
-    else:
-        # Simple case: match all captions sequentially
-        sorted_caps = sorted(captions, key=lambda c: (c["is_extended"], c["fig_num"]))
-        for i, cap in enumerate(sorted_caps):
-            if i < len(uncaptioned):
-                uncaptioned[i].caption = cap["caption"]
+    for fig, cap in _caption_figure_pairs(figures, captions, only_uncaptioned=True):
+        fig.caption = cap["caption"]
 
     return figures
+
+
+def sync_caption_alt_text(markdown: str, figures: list[Figure], captions: list[dict]) -> str:
+    """Update figure image alt text with matched figure caption labels."""
+    for fig, cap in _caption_figure_pairs(figures, captions, only_uncaptioned=False):
+        alt_text = _caption_alt_text(cap)
+        markdown = re.sub(
+            rf"!\[[^\]]*\]\({re.escape(fig.id)}\)",
+            f"![{alt_text}]({fig.id})",
+            markdown,
+            count=1,
+        )
+    return markdown
+
+
+def _caption_figure_pairs(
+    figures: list[Figure],
+    captions: list[dict],
+    *,
+    only_uncaptioned: bool,
+) -> list[tuple[Figure, dict]]:
+    main_caps = _prefer_real_captions(sorted(
+        [c for c in captions if not c["is_extended"]],
+        key=lambda c: c["fig_num"],
+    ))
+    ext_caps = _prefer_real_captions(sorted(
+        [c for c in captions if c["is_extended"]],
+        key=lambda c: c["fig_num"],
+    ))
+
+    candidate_figures = [f for f in figures if not f.caption] if only_uncaptioned else list(figures)
+    ordered_figures = sorted(
+        candidate_figures,
+        key=lambda f: (f.page, figures.index(f)),
+    )
+
+    main_figures = ordered_figures[:len(main_caps)]
+    ext_figures = ordered_figures[len(main_caps):]
+
+    return [
+        *zip(main_figures, main_caps, strict=False),
+        *zip(ext_figures, ext_caps, strict=False),
+    ]
+
+
+def _prefer_real_captions(captions: list[dict]) -> list[dict]:
+    """Keep one caption per figure number, replacing placeholders when possible."""
+    best_by_num: dict[int, dict] = {}
+    for cap in captions:
+        fig_num = cap["fig_num"]
+        current = best_by_num.get(fig_num)
+        if current is None or (
+            _NEXT_PAGE_CAPTION_RE.match(current["caption"] or "")
+            and not _NEXT_PAGE_CAPTION_RE.match(cap["caption"] or "")
+        ):
+            best_by_num[fig_num] = cap
+    return [best_by_num[fig_num] for fig_num in sorted(best_by_num)]
+
+
+def _caption_alt_text(caption: dict) -> str:
+    prefix = "Extended Data Fig." if caption["is_extended"] else "Fig."
+    caption_text = re.sub(r"<[^>]+>", "", caption["caption"])
+    caption_text = re.sub(r"\s+", " ", caption_text).strip().replace("]", ")")
+    panel_start = re.search(r"\.\s+(?=[a-z](?:[,.\u2013-]|\s))", caption_text)
+    if panel_start:
+        caption_text = caption_text[:panel_start.start() + 1]
+    return f"{prefix} {caption['fig_num']} | {caption_text}"
