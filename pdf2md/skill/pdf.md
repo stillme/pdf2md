@@ -1,6 +1,6 @@
 ---
 name: pdf
-description: Convert PDFs to structured markdown with math/LaTeX, bold heading detection, figure extraction, and agentic verification. Handles scientific papers, Nature articles, and math-heavy documents.
+description: Convert PDFs to structured markdown with math/LaTeX, bold heading detection, figure extraction with sub-panel filtering, superscript reference detection, compound hyphen handling, and agentic verification. Handles scientific papers, Nature articles, and math-heavy documents.
 ---
 
 Convert a PDF to markdown using pdf2md.
@@ -23,9 +23,11 @@ Examples:
 2. Run conversion with the specified options
 3. Math/LaTeX conversion runs automatically on all tiers (60+ Unicode symbols mapped to LaTeX, display/inline equation wrapping)
 4. Bold heading detection runs automatically when PyMuPDF is installed (two-pass font analysis catches Nature-style section headings)
-5. Figure extraction uses PyMuPDF embedded images with xref dedup, auto MIME detection (JPEG/PNG/GIF/WebP), and automatic resizing for large images. Caption extraction supports Nature ("|"), standard ("."), and Extended Data styles. Panel references (e.g., "Fig. 3a", "Fig. 4c,d") are parsed with range expansion. VLM figure descriptions available on standard/deep tiers
-6. Return the markdown directly into the conversation context
-7. For deep tier, show confidence scores
+5. Figure extraction uses PyMuPDF embedded images with xref dedup, max_per_page filtering (keeps only the largest image per page to prevent sub-panels from counting as separate figures), auto MIME detection (JPEG/PNG/GIF/WebP), and automatic resizing for large images. Caption extraction supports Nature ("|"), standard ("."), and Extended Data styles. Panel references (e.g., "Fig. 3a", "Fig. 4c,d") are parsed with range expansion. VLM figure descriptions available on standard/deep tiers
+6. Superscript reference detection wraps inline citation numbers and author affiliations with `<sup>` tags while excluding gene names, figure identifiers, and other non-reference patterns
+7. Compound word hyphen handling preserves hyphens in compound words (microbiota-driven) while joining combining forms (immunological). Figure annotation filtering removes leaked axis labels and metabolite names from body text
+8. Return the markdown directly into the conversation context
+9. For deep tier, show confidence scores
 
 ## Implementation
 
