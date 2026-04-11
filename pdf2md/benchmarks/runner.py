@@ -139,6 +139,7 @@ def _convert_paper(
         suffix = f"-{tier}" if tier != "fast" else ""
         doc.save_markdown(str(out / f"{name}{suffix}.md"))
         doc.save_json(str(out / f"{name}{suffix}.json"))
+        doc.save_figure_index(str(out / f"{name}{suffix}.figures.json"))
         # Save figures to subdirectory
         fig_dir = out / f"{name}{suffix}-figures"
         if doc.figures and any(f.image_base64 for f in doc.figures):

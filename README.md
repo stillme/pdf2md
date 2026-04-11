@@ -43,6 +43,7 @@ pdf2md convert https://arxiv.org/pdf/2301.00001.pdf --tier deep
 - **Math/LaTeX conversion** — converts 60+ Unicode math symbols to LaTeX (`\nabla`, `\alpha`, `\sum`, etc.), wraps equations in `$...$` / `$$...$$` delimiters. Handles both display and inline equations.
 - **Figure extraction** — PyMuPDF extracts embedded images (200x200+ pixels) with xref dedup and `max_per_page` filtering (keeps only the largest image per page to prevent sub-panels from counting as separate figures). pypdfium2 renders full pages as fallback. Auto MIME detection (JPEG/PNG/GIF/WebP from magic bytes) and automatic image resizing for large figures (>1500px). VLM figure descriptions available on standard/deep tiers.
 - **Figure caption extraction** — Parses full figure legends from markdown text. Supports Nature style ("Fig. 1 | Caption text."), standard ("Figure 2. Caption text."), and Extended Data ("Extended Data Fig. 3 | Caption text."). Page-order caption matching prefers real captions over "See next page for caption" placeholders, synchronizes image alt text with the matched caption title, and reinserts the full caption block next to the matched figure marker.
+- **Figure index sidecar** — Builds a lightweight `pdf2md.figure_index.v1` JSON artifact with figure ids, labels, captions, page/markdown anchors, panel labels, in-text panel mentions, image hashes, and parse confidence. The sidecar excludes image blobs so downstream research and knowledge-graph workflows can consume figure evidence without loading the full document JSON.
 - **Panel reference parsing** — Extracts in-text references like "Fig. 3a", "Fig. 4c,d" with range expansion ("Fig. 2a--c" expands to panels a, b, c). 160 panel references found on the Nature benchmark paper.
 - **Superscript reference detection** — Wraps inline citation numbers (`regions1–8` becomes `regions<sup>1–8</sup>`) and author affiliations with `<sup>` tags. Safely excludes gene names (Ang4, Defa21), CamelCase gene identifiers with comma/range-like digits, figure/table identifiers (fig1, table2), and other non-reference digit patterns.
 - **Compound word hyphen handling** — Prefix/suffix-aware line-break rejoining preserves compound words (`microbiota-driven`, `region-enriched`) while correctly joining combining forms (`immunological`, `environmental`). Handles soft hyphens (U+00AD), PDF control hyphen markers (U+0002), and PDF replacement characters (U+FFBE/FFFE).
@@ -162,6 +163,7 @@ pdf2md convert paper.pdf --tier deep
 pdf2md convert paper.pdf --figures describe   # VLM describes each figure
 pdf2md convert paper.pdf --figures extract     # Saves figure images to disk
 pdf2md convert paper.pdf --figures skip        # Ignores figures entirely
+pdf2md convert paper.pdf -o paper.md --figures-json paper.figures.json
 
 # JSON output (includes sections, tables, metadata)
 pdf2md convert paper.pdf --json
@@ -212,6 +214,9 @@ for fig in doc.figures:
     if fig.image_base64:
         print(f"    Image: {len(fig.image_base64) // 1024}KB")
 
+for entry in doc.figure_index:
+    print(f"  {entry.label}: panels={entry.panels}, mentions={len(entry.mentions)}")
+
 # Panel references (in-text figure citations)
 from pdf2md.enhancers.captions import extract_panel_references
 refs = extract_panel_references(doc.markdown)
@@ -224,6 +229,7 @@ for eq in doc.equations:
 # Save outputs
 doc.save_markdown("output.md")
 doc.save_json("output.json")
+doc.save_figure_index("output.figures.json")
 doc.save_figures("figures/")
 
 # Batch conversion

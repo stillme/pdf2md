@@ -35,6 +35,28 @@ class Figure(BaseModel):
     confidence: float = 0.0
 
 
+class FigureMention(BaseModel):
+    panels: list[str] = Field(default_factory=list)
+    context: str = ""
+
+
+class FigureIndexEntry(BaseModel):
+    figure_id: str
+    label: str | None = None
+    figure_number: int | None = None
+    is_extended: bool = False
+    page: int
+    caption: str | None = None
+    panels: list[str] = Field(default_factory=list)
+    mentions: list[FigureMention] = Field(default_factory=list)
+    markdown_anchor: str = ""
+    markdown_line: int | None = None
+    image_hash: str | None = None
+    image_path: str | None = None
+    source: str = "pdf2md"
+    parse_confidence: float = 0.0
+
+
 class Table(BaseModel):
     id: str
     caption: str | None = None
@@ -67,6 +89,7 @@ class Document(BaseModel):
     metadata: Metadata
     sections: list[Section] = Field(default_factory=list)
     figures: list[Figure] = Field(default_factory=list)
+    figure_index: list[FigureIndexEntry] = Field(default_factory=list)
     tables: list[Table] = Field(default_factory=list)
     equations: list[Equation] = Field(default_factory=list)
     bibliography: list[Reference] = Field(default_factory=list)
@@ -90,3 +113,18 @@ class Document(BaseModel):
 
     def save_json(self, path: str) -> None:
         Path(path).write_text(self.model_dump_json(indent=2))
+
+    def save_figure_index(self, path: str) -> None:
+        payload = {
+            "schema_version": "pdf2md.figure_index.v1",
+            "document": {
+                "title": self.metadata.title,
+                "doi": self.metadata.doi,
+                "pages": self.metadata.pages,
+            },
+            "figures": [
+                entry.model_dump(exclude_none=True)
+                for entry in self.figure_index
+            ],
+        }
+        Path(path).write_text(json.dumps(payload, indent=2))
