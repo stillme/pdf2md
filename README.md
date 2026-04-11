@@ -39,11 +39,15 @@ pdf2md convert https://arxiv.org/pdf/2301.00001.pdf --tier deep
 
 ## Features
 
-- **Bold heading detection** — two-pass font analysis using PyMuPDF determines body text size, then detects bold text larger than body as headings. Catches Nature-style section headings that text-only detection misses. Filters out author names, figure captions, and URLs.
+- **Bold heading detection** — two-pass font analysis using PyMuPDF determines body text size, then detects bold text larger than body as headings. Catches Nature-style section headings that text-only detection misses, handles run-in bold headings without dropping the following sentence, and filters out title-sized text, author names, figure captions, and URLs.
 - **Math/LaTeX conversion** — converts 60+ Unicode math symbols to LaTeX (`\nabla`, `\alpha`, `\sum`, etc.), wraps equations in `$...$` / `$$...$$` delimiters. Handles both display and inline equations.
-- **Figure extraction** — PyMuPDF extracts embedded images (200x200+ pixels) with xref dedup. pypdfium2 renders full pages as fallback. Auto MIME detection (JPEG/PNG/GIF/WebP from magic bytes) and automatic image resizing for large figures (>1500px). VLM figure descriptions available on standard/deep tiers.
-- **Figure caption extraction** — Parses figure legends from markdown text. Supports Nature style ("Fig. 1 | Caption text."), standard ("Figure 2. Caption text."), and Extended Data ("Extended Data Fig. 3 | Caption text.").
+- **Figure extraction** — PyMuPDF extracts embedded images (200x200+ pixels) with xref dedup and `max_per_page` filtering (keeps only the largest image per page to prevent sub-panels from counting as separate figures). pypdfium2 renders full pages as fallback. Auto MIME detection (JPEG/PNG/GIF/WebP from magic bytes) and automatic image resizing for large figures (>1500px). VLM figure descriptions available on standard/deep tiers.
+- **Figure caption extraction** — Parses figure legends from markdown text. Supports Nature style ("Fig. 1 | Caption text."), standard ("Figure 2. Caption text."), and Extended Data ("Extended Data Fig. 3 | Caption text."). Page-order caption matching prefers real captions over "See next page for caption" placeholders and synchronizes image alt text with the matched caption title.
 - **Panel reference parsing** — Extracts in-text references like "Fig. 3a", "Fig. 4c,d" with range expansion ("Fig. 2a--c" expands to panels a, b, c). 160 panel references found on the Nature benchmark paper.
+- **Superscript reference detection** — Wraps inline citation numbers (`regions1–8` becomes `regions<sup>1–8</sup>`) and author affiliations with `<sup>` tags. Safely excludes gene names (Ang4, Defa21), CamelCase gene identifiers with comma/range-like digits, figure/table identifiers (fig1, table2), and other non-reference digit patterns.
+- **Compound word hyphen handling** — Prefix/suffix-aware line-break rejoining preserves compound words (`microbiota-driven`, `region-enriched`) while correctly joining combining forms (`immunological`, `environmental`). Handles soft hyphens (U+00AD), PDF control hyphen markers (U+0002), and PDF replacement characters (U+FFBE/FFFE).
+- **Figure annotation filtering** — Detects and removes figure axis labels, gene name lists, metabolite annotations, next-page caption placeholders, and statistical legend details that leak into body text from PDF figure regions. Uses block detection with strong sentence structure analysis.
+- **Paragraph-flow cleanup** — Removes spurious blank lines before lowercase continuations so extracted prose does not split mid-paragraph.
 - **Table extraction** — pdfplumber table detection with optional VLM correction on standard/deep tiers.
 - **Agentic verify-correct loop** — deep tier uses a VLM to visually compare rendered PDF pages against generated markdown, then corrects errors automatically.
 - **Metadata extraction** — title, authors, DOI parsed from document structure.
@@ -100,10 +104,20 @@ Tested on 6 real papers (fast tier, no VLM):
 | Attention Is All You Need | 15 | 32 | 8 | 24 | — | 3.3s |
 | GPT-4 Technical Report | 100 | 99 | 71 | 5 | — | 8.1s |
 | BERT | 16 | 51 | 8 | 5 | — | 2.1s |
-| Nature (Mayassi et al. 2024) | 41 | 34 | 7 | 25 | 58 | 79s |
+| Nature (Mayassi et al. 2024) | 41 | 34 | 7 | 25 | 15 | 79s |
 | DG EMI Model (math-heavy) | 30 | 16 | 6 | 604 | 5 | 6.8s |
 
 Run your own: `pdf2md benchmark` or `pdf2md benchmark --compare` for tier comparison.
+
+### Nature quality benchmark
+
+The `autoresearch` harness scores the Nature Mayassi et al. paper against figure, caption, legend, body-flow, superscript, heading, hyphen, completeness, and metadata checks:
+
+```bash
+uv run python autoresearch/loop.py --agent codex --iterations 1
+```
+
+Current fast-tier output reaches 100% for every scored dimension except body coherence, which is at 99.0%; the weighted total is 99.9%.
 
 ## Providers
 

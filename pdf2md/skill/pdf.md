@@ -1,6 +1,6 @@
 ---
 name: pdf
-description: Convert PDFs to structured markdown with math/LaTeX, bold heading detection, figure extraction, and agentic verification. Handles scientific papers, Nature articles, and math-heavy documents.
+description: Convert PDFs to structured markdown with math/LaTeX, run-in bold heading detection, figure extraction with sub-panel filtering, page-order caption matching, superscript reference detection, compound hyphen handling, legend cleanup, and agentic verification. Handles scientific papers, Nature articles, and math-heavy documents.
 ---
 
 Convert a PDF to markdown using pdf2md.
@@ -22,10 +22,12 @@ Examples:
 1. Check if pdf2md is installed; if not, offer to install it
 2. Run conversion with the specified options
 3. Math/LaTeX conversion runs automatically on all tiers (60+ Unicode symbols mapped to LaTeX, display/inline equation wrapping)
-4. Bold heading detection runs automatically when PyMuPDF is installed (two-pass font analysis catches Nature-style section headings)
-5. Figure extraction uses PyMuPDF embedded images with xref dedup, auto MIME detection (JPEG/PNG/GIF/WebP), and automatic resizing for large images. Caption extraction supports Nature ("|"), standard ("."), and Extended Data styles. Panel references (e.g., "Fig. 3a", "Fig. 4c,d") are parsed with range expansion. VLM figure descriptions available on standard/deep tiers
-6. Return the markdown directly into the conversation context
-7. For deep tier, show confidence scores
+4. Bold heading detection runs automatically when PyMuPDF is installed (two-pass font analysis catches Nature-style section headings, run-in bold headings, and filters out title-sized text)
+5. Figure extraction uses PyMuPDF embedded images with xref dedup, max_per_page filtering (keeps only the largest image per page to prevent sub-panels from counting as separate figures), auto MIME detection (JPEG/PNG/GIF/WebP), and automatic resizing for large images. Caption extraction supports Nature ("|"), standard ("."), and Extended Data styles; page-order caption matching prefers real captions over "See next page" placeholders and syncs image alt text to the matched caption title. Panel references (e.g., "Fig. 3a", "Fig. 4c,d") are parsed with range expansion. VLM figure descriptions available on standard/deep tiers
+6. Superscript reference detection wraps inline citation numbers and author affiliations with `<sup>` tags while excluding gene names, CamelCase gene identifiers with comma/range-like digits, figure identifiers, and other non-reference patterns
+7. Compound word hyphen handling preserves hyphens in compound words (microbiota-driven) while joining combining forms (immunological), including PDF control hyphen markers. Figure annotation filtering removes leaked axis labels, metabolite names, next-page caption placeholders, and statistical legend details from body text. Paragraph-flow cleanup removes spurious blank lines before lowercase continuations
+8. Return the markdown directly into the conversation context
+9. For deep tier, show confidence scores
 
 ## Implementation
 
@@ -40,6 +42,9 @@ import pdf2md
 # pdf2md benchmark          — run on fast tier
 # pdf2md benchmark --compare — compare all tiers
 ```
+
+For the Nature quality harness, use `uv run python autoresearch/loop.py --agent codex --iterations 1`.
+The current fast-tier output scores 99.9% weighted, with every dimension at 100% except body coherence at 99.0%.
 
 3. Parse arguments:
    - First arg: file path or URL (required)

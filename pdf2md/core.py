@@ -12,11 +12,17 @@ import pypdfium2 as pdfium
 from pdf2md.assembler import assemble_markdown
 from pdf2md.config import Config, FigureMode, Tier
 from pdf2md.document import Document
-from pdf2md.enhancers.captions import extract_figure_captions, extract_panel_references, match_captions_to_figures
+from pdf2md.enhancers.captions import (
+    extract_figure_captions,
+    extract_panel_references,
+    match_captions_to_figures,
+    sync_caption_alt_text,
+)
 from pdf2md.enhancers.figures import enhance_figures
 from pdf2md.enhancers.math import convert_unicode_math, detect_math_regions, extract_equations_vlm
 from pdf2md.enhancers.metadata import extract_metadata
 from pdf2md.enhancers.tables import enhance_table
+from pdf2md.enhancers.superscripts import detect_superscripts
 from pdf2md.enhancers.text_cleaner import clean_figure_text
 from pdf2md.extractors import get_available_extractors, get_extractor_by_name
 from pdf2md.extractors.base import PageContent, RawFigure
@@ -233,12 +239,19 @@ def convert(
     # Extract and match figure captions from the assembled markdown
     captions = extract_figure_captions(doc.markdown)
     if captions and doc.figures:
+        matched_figures = match_captions_to_figures(doc.figures, captions)
         doc = doc.model_copy(update={
-            "figures": match_captions_to_figures(doc.figures, captions),
+            "figures": matched_figures,
+            "markdown": sync_caption_alt_text(doc.markdown, matched_figures, captions),
         })
 
     # Store panel references as metadata (available via doc internals)
     _panel_refs = extract_panel_references(doc.markdown)
+
+    # Superscript detection: wrap inline citation refs and affiliations
+    doc = doc.model_copy(update={
+        "markdown": detect_superscripts(doc.markdown),
+    })
 
     # Math enhancement (all tiers): convert Unicode math symbols to LaTeX
     doc = doc.model_copy(update={

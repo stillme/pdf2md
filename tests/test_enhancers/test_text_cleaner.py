@@ -87,3 +87,143 @@ def test_single_line_text():
     text = "The intestine is characterized by an environment."
     cleaned = clean_figure_text(text)
     assert text == cleaned
+
+
+# --- Annotation block detection ---
+
+def test_removes_long_annotation_block():
+    """Blocks of metabolite/pathway names (>15 chars each) should be removed.
+
+    Requires 6+ lines with no strong sentence structure AND at least one short line.
+    """
+    text = (
+        "We examined the transcriptional landscape.\n"
+        "Short chain fatty acids Bile acids\n"
+        "Adenosine triphosphate\n"
+        "Adenosine diphosphate\n"
+        "Creatine Glycine\n"
+        "Beta-alanine Proline\n"
+        "Beta-lactam antibiotics\n"
+        "Antifolates\n"
+        "The data demonstrate significant effects."
+    )
+    cleaned = clean_figure_text(text)
+    assert "Short chain fatty acids" not in cleaned
+    assert "Adenosine triphosphate" not in cleaned
+    assert "Beta-alanine Proline" not in cleaned
+    assert "Antifolates" not in cleaned
+    assert "We examined" in cleaned
+    assert "data demonstrate" in cleaned
+
+
+def test_removes_annotation_block_with_single_sentence_words():
+    """Blocks with single sentence words like 'and' in 'Di- and tri-peptides' should still be caught."""
+    text = (
+        "Expression patterns shown in figure.\n"
+        "Inorganic phosphate\n"
+        "Oxalate Glucose Fructose\n"
+        "Ferrous iron Folates\n"
+        "Protons Di- and tri-peptides\n"
+        "Beta-alanine Proline\n"
+        "Antifolates\n"
+        "The results were significant and reproducible."
+    )
+    cleaned = clean_figure_text(text)
+    assert "Inorganic phosphate" not in cleaned
+    assert "Ferrous iron" not in cleaned
+    assert "Antifolates" not in cleaned
+    assert "Expression patterns" in cleaned
+    assert "results were significant" in cleaned
+
+
+def test_preserves_short_non_sentence_blocks():
+    """3-4 non-sentence lines without short ratio shouldn't be falsely removed."""
+    text = (
+        "Introduction to the study.\n"
+        "Spatial transcriptomics\n"
+        "Foundation models\n"
+        "Perturbation prediction\n"
+        "These methods were combined in our analysis."
+    )
+    cleaned = clean_figure_text(text)
+    # Only 3 non-sentence lines — below the 5-line annotation threshold,
+    # and short_ratio is not >0.6, so they should be preserved
+    assert "Spatial transcriptomics" in cleaned
+    assert "Foundation models" in cleaned
+
+
+def test_preserves_author_blocks():
+    """Author name blocks with affiliations should NOT be removed."""
+    text = (
+        "Title of the paper.\n"
+        "Toufic Mayassi1,2,9, Chenhao Li1,2,3,9\n"
+        ", Eric M. Brown1,2,3, Rebecca Weisberg1,2\n"
+        "Toru Nakata2,3,4, Hiroshi Yano5,6,7\n"
+        ", David Artis5,6,7,8, Daniel B. Graham1,2,3\n"
+        "Ramnik J. Xavier1,2,3,4\n"
+        "The intestine is characterized by an environment."
+    )
+    cleaned = clean_figure_text(text)
+    assert "Mayassi" in cleaned
+    assert "Brown" in cleaned
+    assert "Xavier" in cleaned
+
+
+def test_preserves_real_prose_with_mixed_sentence_words():
+    """Real sentences should never be removed, even short ones."""
+    text = (
+        "We found the spatial landscape was robust.\n"
+        "The microbiota had a major impact.\n"
+        "These genes were highly expressed.\n"
+        "The results were confirmed by qPCR.\n"
+        "We next examined the colon tissue.\n"
+        "The data support our hypothesis."
+    )
+    cleaned = clean_figure_text(text)
+    # All lines have 2+ sentence words — nothing should be removed
+    assert text == cleaned
+
+
+def test_removes_next_page_caption_placeholders():
+    text = (
+        "Body text before.\n"
+        "Extended Data Fig. 1 | See next page for caption.\n"
+        "![Figure 6](fig6)\n"
+        "Body text after."
+    )
+
+    cleaned = clean_figure_text(text)
+
+    assert "See next page for caption" not in cleaned
+    assert "![Figure 6](fig6)" in cleaned
+    assert "Body text before" in cleaned
+    assert "Body text after" in cleaned
+
+
+def test_removes_legend_statistical_sentences():
+    text = (
+        "Fig. 2 | Example caption. Processed using ImageJ and representative of "
+        "n = 5 biological replicates. Scale bar, 1,000 um.\n"
+        "The next body sentence remains."
+    )
+
+    cleaned = clean_figure_text(text)
+
+    assert "Processed using ImageJ" not in cleaned
+    assert "biological replicates" not in cleaned
+    assert "Scale bar" not in cleaned
+    assert "Fig. 2 | Example caption." in cleaned
+    assert "The next body sentence remains." in cleaned
+
+
+def test_removes_legend_statistical_parentheticals():
+    text = (
+        "Fig. 10 | Caption title. Boxplots showing the fraction of each cluster "
+        "(3 biological replicates per box). Expression of marker genes follows."
+    )
+
+    cleaned = clean_figure_text(text)
+
+    assert "biological replicates" not in cleaned
+    assert "Boxplots showing the fraction" in cleaned
+    assert "Expression of marker genes follows" in cleaned

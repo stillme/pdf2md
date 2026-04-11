@@ -33,6 +33,26 @@ _SENTENCE_WORDS = {
     'found', 'observed', 'identified', 'performed', 'used', 'using',
 }
 
+_NEXT_PAGE_CAPTION_LINE_RE = re.compile(
+    r'^\s*(?:Extended Data\s+)?Fig(?:ure)?\.?\s*\d+\s*[|.:]\s*'
+    r'See\s+(?:the\s+)?next\s+page\s+for\s+caption\.?\s*$',
+    re.IGNORECASE,
+)
+
+_LEGEND_DETAIL_SENTENCE_RE = re.compile(
+    r'(?:(?<=^)|(?<=[.!?])\s+)'
+    r'[^.!?\n]*'
+    r'(?:processed using imagej|representative of n\s*=|biological replicates?|'
+    r'error bars represent|scale bars?,)'
+    r'[^.!?\n]*(?:[.!?]|$)',
+    re.IGNORECASE,
+)
+_LEGEND_DETAIL_PAREN_RE = re.compile(
+    r'\s*\([^)]*(?:biological replicates?|representative of n\s*=|'
+    r'error bars represent|scale bars?,)[^)]*\)',
+    re.IGNORECASE,
+)
+
 
 def _is_figure_label_line(line: str) -> bool:
     """Determine if a single line looks like a figure element label.
@@ -97,27 +117,50 @@ def _line_has_sentence_structure(line: str) -> bool:
     return False
 
 
+def _has_strong_sentence_structure(line: str) -> bool:
+    """Stricter check requiring 2+ sentence words or a period-terminated sentence.
+
+    Single words like "a", "and", "of" appear in figure annotations (panel labels,
+    chemical names like "Di- and tri-peptides"). This check avoids breaking
+    annotation blocks on those lone occurrences.
+    """
+    stripped = line.strip()
+
+    if stripped.endswith('.') and len(stripped) >= 15:
+        return True
+
+    words = stripped.lower().split()
+    count = 0
+    for w in words:
+        clean = w.strip('.,;:!?()[]{}"\'-')
+        if clean in _SENTENCE_WORDS:
+            count += 1
+            if count >= 2:
+                return True
+    return False
+
+
 def _is_figure_leak_block(lines: list[str], start: int, min_block_size: int = 3) -> tuple[bool, int]:
     """Check if a consecutive block of lines starting at `start` is a figure-leak block.
 
-    A figure-leak block is 3+ consecutive lines where >60% are short (<15 chars)
-    and contain no verbs/articles (i.e., no sentence structure).
+    Two detection modes:
+    - Classic: 3+ lines where >60% are short (<15 chars), no sentence structure.
+    - Annotation: 5+ consecutive lines with no strong sentence structure (2+ sentence
+      words). Catches longer figure annotations like metabolite lists, pathway labels.
 
     Returns (is_block, end_index) where end_index is the line after the block.
     """
-    # First line of a potential block must itself look like a figure label
     first_stripped = lines[start].strip()
     if not first_stripped:
         return False, start
-    # If the first line has sentence structure, it's not a figure block start
-    if _line_has_sentence_structure(first_stripped):
+    # Strong sentence check: lines with 2+ sentence words are real prose
+    if _has_strong_sentence_structure(first_stripped):
         return False, start
-    # If the first line is longer than 30 chars and doesn't look like a label, skip
-    if len(first_stripped) > 30:
+    # Cap first-line length at 60 chars (covers metabolite names, pathway terms)
+    if len(first_stripped) > 60:
         return False, start
 
     short_count = 0
-    sentence_count = 0
     total = 0
 
     i = start
@@ -126,11 +169,11 @@ def _is_figure_leak_block(lines: list[str], start: int, min_block_size: int = 3)
         # Empty lines break the block
         if not stripped:
             break
-        # Lines with sentence structure break the block
-        if _line_has_sentence_structure(stripped):
+        # Lines with strong sentence structure (2+ sentence words) break the block
+        if _has_strong_sentence_structure(stripped):
             break
-        # Long lines (>30 chars) that aren't just gene names break the block
-        if len(stripped) > 30 and not _is_figure_label_line(stripped):
+        # Lines >60 chars that aren't gene-like labels break the block
+        if len(stripped) > 60 and not _is_figure_label_line(stripped):
             break
         total += 1
         if len(stripped) < 15:
@@ -142,10 +185,17 @@ def _is_figure_leak_block(lines: list[str], start: int, min_block_size: int = 3)
     if total < min_block_size:
         return False, start
 
-    # >60% of lines are short AND no sentence structure in the block
     short_ratio = short_count / total if total > 0 else 0
 
-    if short_ratio > 0.6 and sentence_count == 0:
+    # Classic mode: 3+ lines, mostly short labels
+    if short_ratio > 0.6:
+        return True, block_end
+
+    # Annotation mode: 6+ consecutive non-sentence lines with at least one
+    # short line are likely figure annotations (metabolite names, transporter
+    # substrates, pathway terms). The short-line requirement excludes author
+    # blocks which also lack sentence structure but have longer lines.
+    if total >= 6 and short_count >= 1:
         return True, block_end
 
     return False, start
@@ -160,12 +210,25 @@ def clean_figure_text(text: str) -> str:
 
     Real content is preserved — only strips when high confidence of figure-leak.
     """
+    text = _LEGEND_DETAIL_PAREN_RE.sub("", text)
     lines = text.split('\n')
     result: list[str] = []
     i = 0
 
     while i < len(lines):
         stripped = lines[i].strip()
+
+        if _NEXT_PAGE_CAPTION_LINE_RE.match(stripped):
+            i += 1
+            continue
+
+        lines[i] = _LEGEND_DETAIL_PAREN_RE.sub("", lines[i])
+        lines[i] = _LEGEND_DETAIL_SENTENCE_RE.sub("", lines[i]).strip()
+        stripped = lines[i].strip()
+        if not stripped:
+            result.append(lines[i])
+            i += 1
+            continue
 
         # Check if this starts a figure-leak block (3+ consecutive short lines)
         is_block, block_end = _is_figure_leak_block(lines, i)

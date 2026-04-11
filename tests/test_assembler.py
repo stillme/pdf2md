@@ -227,6 +227,50 @@ def test_bold_headings_no_duplicates_with_regex():
     assert titles.count("Introduction") == 1
 
 
+def test_bold_run_in_heading_preserves_remainder():
+    """Run-in bold headings should not discard non-bold text on the same line."""
+    pages = [
+        PageContent(
+            page_number=0,
+            text=(
+                "Spatial transcriptomics data processing. "
+                "Raw Visium datasets were processed."
+            ),
+            tables=[], figures=[], confidence=0.9,
+        ),
+    ]
+    bold_headings = [
+        {
+            "text": "Spatial transcriptomics data processing.",
+            "page": 0,
+            "font_size": 8.25,
+        },
+    ]
+    result = assemble_markdown(pages, bold_headings=bold_headings)
+
+    assert "## Spatial transcriptomics data processing." in result.markdown
+    assert "Raw Visium datasets were processed." in result.markdown
+    assert "Spatial transcriptomics data processing. Raw" not in result.markdown
+
+
+def test_removes_blank_line_before_lowercase_continuation():
+    pages = [
+        PageContent(
+            page_number=0,
+            text=(
+                "we compared effect\n"
+                "\n"
+                "sizes for DEGs identified in the comparison."
+            ),
+            tables=[], figures=[], confidence=0.9,
+        ),
+    ]
+    result = assemble_markdown(pages)
+
+    assert "effect\nsizes" in result.markdown
+    assert "effect\n\nsizes" not in result.markdown
+
+
 def test_bold_headings_none_is_noop():
     """Passing no bold_headings should work the same as before."""
     pages = [
@@ -239,3 +283,55 @@ def test_bold_headings_none_is_noop():
     result_without = assemble_markdown(pages)
     result_with = assemble_markdown(pages, bold_headings=None)
     assert len(result_without.sections) == len(result_with.sections)
+
+
+# --- Hyphen handling ---
+
+def test_clean_hyphens_preserves_compound_words():
+    """Compound words at line breaks should keep the hyphen."""
+    from pdf2md.assembler import _clean_hyphens
+    assert _clean_hyphens("microbiota-\ndriven") == "microbiota-driven"
+    assert _clean_hyphens("region-\nenriched") == "region-enriched"
+    assert _clean_hyphens("single-\ncell") == "single-cell"
+    assert _clean_hyphens("immune-\nmediated") == "immune-mediated"
+    assert _clean_hyphens("well-\ncharacterized") == "well-characterized"
+
+
+def test_clean_hyphens_joins_combining_prefixes():
+    """Latin/Greek combining forms at line breaks should join without hyphen."""
+    from pdf2md.assembler import _clean_hyphens
+    assert _clean_hyphens("immuno-\nlogical") == "immunological"
+    assert _clean_hyphens("physio-\nlogical") == "physiological"
+    assert _clean_hyphens("neuro-\ninflammation") == "neuroinflammation"
+    assert _clean_hyphens("gastro-\nintestinal") == "gastrointestinal"
+    assert _clean_hyphens("macro-\nphages") == "macrophages"
+
+
+def test_clean_hyphens_joins_suffix_continuations():
+    """Words broken at suffix boundaries should rejoin without hyphen."""
+    from pdf2md.assembler import _clean_hyphens
+    assert _clean_hyphens("environ-\nmental") == "environmental"
+    assert _clean_hyphens("transcrip-\ntional") == "transcriptional"
+    assert _clean_hyphens("express-\ning") == "expressing"
+    assert _clean_hyphens("differ-\nentiation") == "differentiation"
+
+
+def test_clean_hyphens_still_removes_soft_hyphens():
+    """Soft hyphens (U+00AD) should still be removed."""
+    from pdf2md.assembler import _clean_hyphens
+    assert _clean_hyphens("immuno\xadlogical") == "immunological"
+    assert _clean_hyphens("soft\xadhyphen") == "softhyphen"
+
+
+def test_clean_hyphens_in_assembled_output():
+    """Compound words should survive assembly intact."""
+    pages = [
+        PageContent(
+            page_number=0,
+            text="We identified a microbiota-\ndriven adaptation in the region-\nenriched colon.",
+            tables=[], figures=[], confidence=0.9,
+        ),
+    ]
+    result = assemble_markdown(pages)
+    assert "microbiota-driven" in result.markdown
+    assert "region-enriched" in result.markdown

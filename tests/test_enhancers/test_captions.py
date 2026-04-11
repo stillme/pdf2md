@@ -5,6 +5,7 @@ from pdf2md.enhancers.captions import (
     extract_figure_captions,
     extract_panel_references,
     match_captions_to_figures,
+    sync_caption_alt_text,
 )
 
 
@@ -107,6 +108,49 @@ def test_match_captions_to_figures():
     assert result[0].caption == "First caption."
     assert result[1].caption == "Second caption."
     assert result[2].caption is None  # no caption for fig3
+
+
+def test_match_uses_page_order_and_replaces_next_page_placeholders():
+    figures = [
+        Figure(id="fig1", page=1, image_base64="small"),
+        Figure(id="fig2", page=2, image_base64="small"),
+        Figure(id="fig3", page=10, image_base64="large" * 100),
+        Figure(id="fig4", page=11, image_base64="large" * 100),
+    ]
+    captions = [
+        {"fig_num": 1, "caption": "Main one.", "is_extended": False},
+        {"fig_num": 2, "caption": "Main two.", "is_extended": False},
+        {"fig_num": 1, "caption": "See next page for caption.", "is_extended": True},
+        {"fig_num": 1, "caption": "Extended one.", "is_extended": True},
+        {"fig_num": 2, "caption": "See next page for caption.", "is_extended": True},
+        {"fig_num": 2, "caption": "Extended two.", "is_extended": True},
+    ]
+
+    result = match_captions_to_figures(figures, captions)
+
+    assert [f.caption for f in result] == [
+        "Main one.",
+        "Main two.",
+        "Extended one.",
+        "Extended two.",
+    ]
+
+
+def test_sync_caption_alt_text_includes_figure_labels():
+    figures = [
+        Figure(id="fig1", page=1),
+        Figure(id="fig2", page=10),
+    ]
+    captions = [
+        {"fig_num": 1, "caption": "Main caption.", "is_extended": False},
+        {"fig_num": 1, "caption": "Extended caption.", "is_extended": True},
+    ]
+    markdown = "![Figure 1](fig1)\n\n![Figure 2](fig2)"
+
+    result = sync_caption_alt_text(markdown, figures, captions)
+
+    assert "![Fig. 1 | Main caption.](fig1)" in result
+    assert "![Extended Data Fig. 1 | Extended caption.](fig2)" in result
 
 
 def test_match_skips_already_captioned():
