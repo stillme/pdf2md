@@ -24,6 +24,25 @@ def test_convert_to_file(runner, sample_pdf_path, tmp_path):
     assert len(out.read_text()) > 100
 
 
+def test_convert_writes_figure_index_sidecar(runner, sample_pdf_path, tmp_path):
+    out = tmp_path / "output.md"
+    figures_json = tmp_path / "figures.json"
+    result = runner.invoke(
+        main,
+        [
+            "convert",
+            str(sample_pdf_path),
+            "-o",
+            str(out),
+            "--figures-json",
+            str(figures_json),
+        ],
+    )
+    assert result.exit_code == 0
+    assert figures_json.exists()
+    assert "pdf2md.figure_index.v1" in figures_json.read_text()
+
+
 def test_convert_with_tier(runner, sample_pdf_path):
     result = runner.invoke(main, ["convert", str(sample_pdf_path), "--tier", "fast"])
     assert result.exit_code == 0

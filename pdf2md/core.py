@@ -20,6 +20,7 @@ from pdf2md.enhancers.captions import (
     remove_caption_text_blocks,
     sync_caption_alt_text,
 )
+from pdf2md.enhancers.figure_index import build_figure_index
 from pdf2md.enhancers.figures import enhance_figures
 from pdf2md.enhancers.math import convert_unicode_math, detect_math_regions, extract_equations_vlm
 from pdf2md.enhancers.metadata import extract_metadata
@@ -349,6 +350,10 @@ def convert(
                 "doi": meta.doi or doc.metadata.doi,
             })
             doc = doc.model_copy(update={"metadata": updated_meta})
+
+    doc = doc.model_copy(update={
+        "figure_index": build_figure_index(doc.markdown, doc.figures),
+    })
 
     # Stamp tier and timing
     elapsed_ms = int((time.monotonic() - t0) * 1000)

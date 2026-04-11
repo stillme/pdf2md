@@ -63,6 +63,15 @@ def test_extract_panel_references():
     assert refs[1]["fig_num"] == 4
 
 
+def test_extract_extended_data_panel_references():
+    text = "The validation is shown in Extended Data Fig. 2a-c."
+    refs = extract_panel_references(text)
+    assert len(refs) == 1
+    assert refs[0]["fig_num"] == 2
+    assert refs[0]["is_extended"] is True
+    assert set(refs[0]["panels"]) == {"a", "b", "c"}
+
+
 def test_panel_range():
     text = "Fig. 2a\u2013c shows the progression."
     refs = extract_panel_references(text)

@@ -98,16 +98,18 @@ def extract_panel_references(markdown: str) -> list[dict]:
     """
     refs: list[dict] = []
 
-    # Match "Fig. 3a" or "Fig. 3a,b" or "Fig. 3a-c" or "Fig. 3a,b,c"
+    # Match "Fig. 3a", "Fig. 3a,b", "Fig. 3a-c", or
+    # "Extended Data Fig. 3a".
     # The panel part: a single letter optionally followed by comma/dash/en-dash + letter
     pattern = re.compile(
-        r"Fig\.?\s*(\d+)([a-z](?:[,\u2013-][a-z])*)",
+        r"((?:Extended Data\s+)?)Fig\.?\s*(\d+)([a-z](?:[,\u2013-][a-z])*)",
         re.IGNORECASE,
     )
 
     for match in pattern.finditer(markdown):
-        fig_num = int(match.group(1))
-        panel_str = match.group(2)
+        is_extended = "extended data" in match.group(1).lower()
+        fig_num = int(match.group(2))
+        panel_str = match.group(3)
 
         # Parse panels: "a,b" -> ["a", "b"], "a-c" -> ["a", "b", "c"]
         panels = _parse_panels(panel_str)
@@ -121,6 +123,7 @@ def extract_panel_references(markdown: str) -> list[dict]:
             "fig_num": fig_num,
             "panels": panels,
             "context": context,
+            "is_extended": is_extended,
         })
 
     return refs

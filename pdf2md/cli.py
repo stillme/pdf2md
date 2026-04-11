@@ -34,7 +34,8 @@ def main():
 @click.option("--provider", default=None, help="VLM provider override.")
 @click.option("--verify/--no-verify", default=True, help="Run verification passes.")
 @click.option("--json-output", "--json", "json_out", is_flag=True, help="Output as JSON.")
-def convert(source, output, tier, figures, provider, verify, json_out):
+@click.option("--figures-json", default=None, help="Write lightweight figure index sidecar JSON.")
+def convert(source, output, tier, figures, provider, verify, json_out, figures_json):
     """Convert a PDF to markdown.
 
     SOURCE can be a file path or URL.
@@ -67,6 +68,10 @@ def convert(source, output, tier, figures, provider, verify, json_out):
         click.echo(f"Written to {output}")
     else:
         click.echo(content)
+
+    if figures_json:
+        doc.save_figure_index(figures_json)
+        click.echo(f"Figure index written to {figures_json}", err=True)
 
 
 @main.command()

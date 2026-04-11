@@ -1,7 +1,10 @@
 """Tests for the Document model."""
 
+import json
+
 from pdf2md.document import (
-    Document, Metadata, Section, Figure, Table, Equation, Reference,
+    Document, Metadata, Section, Figure, FigureIndexEntry, FigureMention,
+    Table, Equation, Reference,
 )
 
 
@@ -23,6 +26,22 @@ def test_figure_creation():
     assert f.caption is None
     assert f.description is None
     assert f.confidence == 0.9
+
+
+def test_figure_index_entry_creation():
+    entry = FigureIndexEntry(
+        figure_id="fig1",
+        label="Fig. 1",
+        figure_number=1,
+        page=2,
+        caption="A mapped result.",
+        panels=["a", "b"],
+        mentions=[FigureMention(panels=["a"], context="As shown in Fig. 1a")],
+        markdown_anchor="fig1",
+        parse_confidence=0.9,
+    )
+    assert entry.label == "Fig. 1"
+    assert entry.mentions[0].panels == ["a"]
 
 
 def test_table_creation():
@@ -83,7 +102,6 @@ def test_document_save_markdown(tmp_path):
 
 
 def test_document_save_json(tmp_path):
-    import json
     doc = Document(
         markdown="# Title",
         metadata=Metadata(title="Test", pages=1),
@@ -96,3 +114,31 @@ def test_document_save_json(tmp_path):
     data = json.loads(out.read_text())
     assert data["metadata"]["title"] == "Test"
     assert data["engine_used"] == "pypdfium2"
+
+
+def test_document_save_figure_index(tmp_path):
+    doc = Document(
+        markdown="# Title",
+        metadata=Metadata(title="Test", doi="10.123/test", pages=1),
+        figure_index=[
+            FigureIndexEntry(
+                figure_id="fig1",
+                label="Fig. 1",
+                figure_number=1,
+                page=0,
+                caption="Caption.",
+                markdown_anchor="fig1",
+            ),
+        ],
+        confidence=0.9,
+        page_confidences=[0.9],
+        engine_used="pypdfium2",
+        tier_used="fast",
+        processing_time_ms=10,
+    )
+    out = tmp_path / "figures.json"
+    doc.save_figure_index(str(out))
+    data = json.loads(out.read_text())
+    assert data["schema_version"] == "pdf2md.figure_index.v1"
+    assert data["document"]["doi"] == "10.123/test"
+    assert data["figures"][0]["figure_id"] == "fig1"
