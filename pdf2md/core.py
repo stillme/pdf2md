@@ -15,7 +15,9 @@ from pdf2md.document import Document
 from pdf2md.enhancers.captions import (
     extract_figure_captions,
     extract_panel_references,
+    insert_caption_text_blocks,
     match_captions_to_figures,
+    remove_caption_text_blocks,
     sync_caption_alt_text,
 )
 from pdf2md.enhancers.figures import enhance_figures
@@ -231,18 +233,26 @@ def convert(
     })
     doc = doc.model_copy(update={"metadata": updated_meta})
 
+    # Extract captions before figure-leak cleanup so complete legends are
+    # preserved even when cleanup strips statistical legend language from prose.
+    captions = extract_figure_captions(doc.markdown)
+    if captions:
+        doc = doc.model_copy(update={
+            "markdown": remove_caption_text_blocks(doc.markdown, captions),
+        })
+
     # Clean figure-leak text (axis labels, gene names from figures)
     doc = doc.model_copy(update={
         "markdown": clean_figure_text(doc.markdown),
     })
 
-    # Extract and match figure captions from the assembled markdown
-    captions = extract_figure_captions(doc.markdown)
     if captions and doc.figures:
         matched_figures = match_captions_to_figures(doc.figures, captions)
+        synced_markdown = sync_caption_alt_text(doc.markdown, matched_figures, captions)
+        synced_markdown = insert_caption_text_blocks(synced_markdown, matched_figures, captions)
         doc = doc.model_copy(update={
             "figures": matched_figures,
-            "markdown": sync_caption_alt_text(doc.markdown, matched_figures, captions),
+            "markdown": synced_markdown,
         })
 
     # Store panel references as metadata (available via doc internals)

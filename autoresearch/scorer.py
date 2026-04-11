@@ -197,8 +197,7 @@ def score_legend_separation(md: str) -> float:
     "representative of n = 5 biological replicates", etc.
     These should be in figure captions, not in the body text flow.
     """
-    lines = md.split("\n")
-    body_lines = [l for l in lines if not re.match(r'\s*!\[', l)]
+    body_lines = _non_caption_body_lines(md)
     body_text = "\n".join(body_lines).lower()
 
     leaks = sum(1 for phrase in LEGEND_LANGUAGE if phrase in body_text)
@@ -217,7 +216,7 @@ def score_body_coherence(md: str) -> float:
     - Orphaned sentence fragments after figure removals
     - Reading order disruptions
     """
-    lines = md.split("\n")
+    lines = _non_caption_body_lines(md)
     issues = 0
     total_checks = 0
 
@@ -247,6 +246,19 @@ def score_body_coherence(md: str) -> float:
     if total_checks == 0:
         return 1.0
     return max(0.0, 1.0 - issues / total_checks * 5)
+
+
+def _non_caption_body_lines(md: str) -> list[str]:
+    """Return body lines, excluding image markers and explicit caption blocks."""
+    body_lines: list[str] = []
+    for line in md.split("\n"):
+        stripped = line.strip()
+        if re.match(r'\s*!\[', line):
+            continue
+        if re.match(r'^(?:Extended Data\s+)?Fig\.\s+\d+\s+\|', stripped):
+            continue
+        body_lines.append(line)
+    return body_lines
 
 
 def score_superscript_precision(md: str) -> float:

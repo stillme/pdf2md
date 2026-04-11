@@ -42,11 +42,11 @@ pdf2md convert https://arxiv.org/pdf/2301.00001.pdf --tier deep
 - **Bold heading detection** — two-pass font analysis using PyMuPDF determines body text size, then detects bold text larger than body as headings. Catches Nature-style section headings that text-only detection misses, handles run-in bold headings without dropping the following sentence, and filters out title-sized text, author names, figure captions, and URLs.
 - **Math/LaTeX conversion** — converts 60+ Unicode math symbols to LaTeX (`\nabla`, `\alpha`, `\sum`, etc.), wraps equations in `$...$` / `$$...$$` delimiters. Handles both display and inline equations.
 - **Figure extraction** — PyMuPDF extracts embedded images (200x200+ pixels) with xref dedup and `max_per_page` filtering (keeps only the largest image per page to prevent sub-panels from counting as separate figures). pypdfium2 renders full pages as fallback. Auto MIME detection (JPEG/PNG/GIF/WebP from magic bytes) and automatic image resizing for large figures (>1500px). VLM figure descriptions available on standard/deep tiers.
-- **Figure caption extraction** — Parses figure legends from markdown text. Supports Nature style ("Fig. 1 | Caption text."), standard ("Figure 2. Caption text."), and Extended Data ("Extended Data Fig. 3 | Caption text."). Page-order caption matching prefers real captions over "See next page for caption" placeholders and synchronizes image alt text with the matched caption title.
+- **Figure caption extraction** — Parses full figure legends from markdown text. Supports Nature style ("Fig. 1 | Caption text."), standard ("Figure 2. Caption text."), and Extended Data ("Extended Data Fig. 3 | Caption text."). Page-order caption matching prefers real captions over "See next page for caption" placeholders, synchronizes image alt text with the matched caption title, and reinserts the full caption block next to the matched figure marker.
 - **Panel reference parsing** — Extracts in-text references like "Fig. 3a", "Fig. 4c,d" with range expansion ("Fig. 2a--c" expands to panels a, b, c). 160 panel references found on the Nature benchmark paper.
 - **Superscript reference detection** — Wraps inline citation numbers (`regions1–8` becomes `regions<sup>1–8</sup>`) and author affiliations with `<sup>` tags. Safely excludes gene names (Ang4, Defa21), CamelCase gene identifiers with comma/range-like digits, figure/table identifiers (fig1, table2), and other non-reference digit patterns.
 - **Compound word hyphen handling** — Prefix/suffix-aware line-break rejoining preserves compound words (`microbiota-driven`, `region-enriched`) while correctly joining combining forms (`immunological`, `environmental`). Handles soft hyphens (U+00AD), PDF control hyphen markers (U+0002), and PDF replacement characters (U+FFBE/FFFE).
-- **Figure annotation filtering** — Detects and removes figure axis labels, gene name lists, metabolite annotations, next-page caption placeholders, and statistical legend details that leak into body text from PDF figure regions. Uses block detection with strong sentence structure analysis.
+- **Figure annotation filtering** — Detects and removes figure axis labels, gene name lists, metabolite annotations, next-page caption placeholders, and statistical legend details that leak into body text from PDF figure regions. Preserves matched legend details inside explicit caption blocks and moves figure blocks to sentence boundaries when extraction interrupts prose.
 - **Paragraph-flow cleanup** — Removes spurious blank lines before lowercase continuations so extracted prose does not split mid-paragraph.
 - **Table extraction** — pdfplumber table detection with optional VLM correction on standard/deep tiers.
 - **Agentic verify-correct loop** — deep tier uses a VLM to visually compare rendered PDF pages against generated markdown, then corrects errors automatically.
@@ -117,7 +117,7 @@ The `autoresearch` harness scores the Nature Mayassi et al. paper against figure
 uv run python autoresearch/loop.py --agent codex --iterations 1
 ```
 
-Current fast-tier output reaches 100% for every scored dimension except body coherence, which is at 99.0%; the weighted total is 99.9%.
+Current fast-tier output reaches 100% on all weighted dimensions except body coherence, which is at 99.8%; the weighted total rounds to 100.0%.
 
 ## Providers
 

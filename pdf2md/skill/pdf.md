@@ -1,6 +1,6 @@
 ---
 name: pdf
-description: Convert PDFs to structured markdown with math/LaTeX, run-in bold heading detection, figure extraction with sub-panel filtering, page-order caption matching, superscript reference detection, compound hyphen handling, legend cleanup, and agentic verification. Handles scientific papers, Nature articles, and math-heavy documents.
+description: Convert PDFs to structured markdown with math/LaTeX, run-in bold heading detection, figure extraction with sub-panel filtering, page-order full-caption matching, superscript reference detection, compound hyphen handling, legend cleanup, and agentic verification. Handles scientific papers, Nature articles, and math-heavy documents.
 ---
 
 Convert a PDF to markdown using pdf2md.
@@ -23,9 +23,9 @@ Examples:
 2. Run conversion with the specified options
 3. Math/LaTeX conversion runs automatically on all tiers (60+ Unicode symbols mapped to LaTeX, display/inline equation wrapping)
 4. Bold heading detection runs automatically when PyMuPDF is installed (two-pass font analysis catches Nature-style section headings, run-in bold headings, and filters out title-sized text)
-5. Figure extraction uses PyMuPDF embedded images with xref dedup, max_per_page filtering (keeps only the largest image per page to prevent sub-panels from counting as separate figures), auto MIME detection (JPEG/PNG/GIF/WebP), and automatic resizing for large images. Caption extraction supports Nature ("|"), standard ("."), and Extended Data styles; page-order caption matching prefers real captions over "See next page" placeholders and syncs image alt text to the matched caption title. Panel references (e.g., "Fig. 3a", "Fig. 4c,d") are parsed with range expansion. VLM figure descriptions available on standard/deep tiers
+5. Figure extraction uses PyMuPDF embedded images with xref dedup, max_per_page filtering (keeps only the largest image per page to prevent sub-panels from counting as separate figures), auto MIME detection (JPEG/PNG/GIF/WebP), and automatic resizing for large images. Caption extraction supports Nature ("|"), standard ("."), and Extended Data styles; page-order caption matching prefers real captions over "See next page" placeholders, syncs image alt text to the matched caption title, and reinserts the full legend block next to the matched figure marker. Panel references (e.g., "Fig. 3a", "Fig. 4c,d") are parsed with range expansion. VLM figure descriptions available on standard/deep tiers
 6. Superscript reference detection wraps inline citation numbers and author affiliations with `<sup>` tags while excluding gene names, CamelCase gene identifiers with comma/range-like digits, figure identifiers, and other non-reference patterns
-7. Compound word hyphen handling preserves hyphens in compound words (microbiota-driven) while joining combining forms (immunological), including PDF control hyphen markers. Figure annotation filtering removes leaked axis labels, metabolite names, next-page caption placeholders, and statistical legend details from body text. Paragraph-flow cleanup removes spurious blank lines before lowercase continuations
+7. Compound word hyphen handling preserves hyphens in compound words (microbiota-driven) while joining combining forms (immunological), including PDF control hyphen markers. Figure annotation filtering removes leaked axis labels, metabolite names, next-page caption placeholders, and statistical legend details from body text while preserving matched details inside explicit caption blocks. Paragraph-flow cleanup removes spurious blank lines before lowercase continuations and moves figure blocks to sentence boundaries when extraction interrupts prose
 8. Return the markdown directly into the conversation context
 9. For deep tier, show confidence scores
 
@@ -44,7 +44,7 @@ import pdf2md
 ```
 
 For the Nature quality harness, use `uv run python autoresearch/loop.py --agent codex --iterations 1`.
-The current fast-tier output scores 99.9% weighted, with every dimension at 100% except body coherence at 99.0%.
+The current fast-tier output scores 100.0% weighted, with every weighted dimension at 100% except body coherence at 99.8%.
 
 3. Parse arguments:
    - First arg: file path or URL (required)
