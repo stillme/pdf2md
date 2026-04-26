@@ -9,10 +9,19 @@ def test_benchmark_papers_defined():
     assert len(BENCHMARK_PAPERS) >= 3
     for p in BENCHMARK_PAPERS:
         assert "name" in p
-        # Each paper must have either a URL or a local path
+        # Each paper must have either a URL or a local_filename basename
         has_url = p.get("url", "").startswith("https://")
-        has_path = bool(p.get("path", ""))
-        assert has_url or has_path, f"Paper {p['name']} needs a url or path"
+        has_local = bool(p.get("local_filename", ""))
+        assert has_url or has_local, (
+            f"Paper {p['name']} needs a url or local_filename"
+        )
+        # local_filename must be a basename (no path separators), so it stays
+        # portable across machines.
+        if has_local:
+            local = p["local_filename"]
+            assert "/" not in local and "\\" not in local, (
+                f"Paper {p['name']} local_filename must be a basename"
+            )
 
 
 def test_benchmark_result_creation():
