@@ -3,6 +3,8 @@ from __future__ import annotations
 import base64
 import httpx
 
+from pdf2md.cache import cached_call
+
 
 class OllamaProvider:
     """Ollama provider for locally-hosted models via the generate API."""
@@ -29,15 +31,20 @@ class OllamaProvider:
         return payload
 
     def complete_sync(self, prompt: str, image: bytes | None = None) -> str:
-        payload = self._build_payload(prompt, image)
-        response = httpx.post(
-            self._BASE_URL,
-            json=payload,
-            timeout=120,
+        def _call() -> str:
+            payload = self._build_payload(prompt, image)
+            response = httpx.post(
+                self._BASE_URL,
+                json=payload,
+                timeout=120,
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data["response"]
+
+        return cached_call(
+            _call, prompt=prompt, model=self._model, image=image, provider=self.name,
         )
-        response.raise_for_status()
-        data = response.json()
-        return data["response"]
 
     async def complete(self, prompt: str, image: bytes | None = None) -> str:
         return self.complete_sync(prompt, image)

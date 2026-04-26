@@ -147,6 +147,10 @@ doc = pdf2md.convert("paper.pdf", tier="standard", provider="ollama/llava")
 
 Auto-detection: if no provider is specified, pdf2md checks for available API keys in order (Anthropic, OpenAI, Google, Ollama) and uses the first one found.
 
+### Caching
+
+pdf2md can cache VLM responses on disk to make repeated runs (autoresearch, benchmarks) cheap. Set `PDF2MD_CACHE=1` to enable the content-addressed cache, keyed by `(prompt, model, image)`. Cache files default to `~/.cache/pdf2md` and the location can be overridden with `PDF2MD_CACHE_DIR=/path`. Caching is OFF by default and never raises on read/write failures.
+
 ## CLI usage
 
 ```bash
