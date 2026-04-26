@@ -1,6 +1,6 @@
 """Tests for VLM provider protocol and registry."""
 
-from pdf2md.providers.base import VLMProvider, VerifyResult
+from pdf2md.providers.base import VLMProvider, VerifyCorrection, VerifyResult
 from pdf2md.providers.registry import detect_providers, get_provider
 
 
@@ -12,7 +12,15 @@ def test_verify_result_pass():
 def test_verify_result_fail():
     r = VerifyResult(
         status="fail", confidence=0.4,
-        corrections=[{"region": "table1", "problem": "wrong columns", "fix": "corrected table"}],
+        corrections=[
+            VerifyCorrection(
+                region="table1",
+                before_context="",
+                after_context="",
+                original="wrong columns",
+                replacement="corrected table",
+            ),
+        ],
     )
     assert len(r.corrections) == 1
 
