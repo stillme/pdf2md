@@ -22,6 +22,7 @@ from pdf2md.enhancers.captions import (
     remove_caption_text_blocks,
     sync_caption_alt_text,
 )
+from pdf2md.enhancers.cross_references import add_cross_references
 from pdf2md.enhancers.figure_index import build_figure_index
 from pdf2md.enhancers.figures import enhance_figures
 from pdf2md.enhancers.math import convert_unicode_math, detect_math_regions, extract_equations_vlm
@@ -375,6 +376,13 @@ def convert(
 
     doc = doc.model_copy(update={
         "figure_index": build_figure_index(doc.markdown, doc.figures),
+    })
+
+    # Cross-reference linking: turn "Fig. 3", "Section 4.2", "[12]" into
+    # markdown links pointing at the matching figure / heading / bibliography
+    # entry. Runs after figure_index is built so figure anchors are available.
+    doc = doc.model_copy(update={
+        "markdown": add_cross_references(doc.markdown, doc),
     })
 
     # Rescore page confidences based on actual extraction results.
