@@ -288,6 +288,29 @@ def test_run_verify_loop_records_skipped():
     assert rendered == expected
 
 
+def test_run_verify_loop_returns_corrected_markdown_when_max_rounds_reached():
+    """Regression: with max_rounds=1 and a verifier that always returns
+    corrections, the loop must return the post-correction markdown rather
+    than the original. (Pre-fix the loop discarded the final round's edits.)"""
+    md = "The quick brown fox jumps over the lazy dog."
+    response = json.dumps({
+        "status": "fail",
+        "confidence": 0.6,
+        "corrections": [{
+            "region": "animal",
+            "before_context": "quick brown ",
+            "after_context": " jumps over",
+            "original": "fox",
+            "replacement": "wolf",
+        }],
+    })
+    mock_provider = MagicMock()
+    mock_provider.complete_sync.return_value = response
+    markdown, _ = run_verify_loop(b"img", md, mock_provider, max_rounds=1)
+    assert "wolf" in markdown
+    assert "fox" not in markdown
+
+
 # ---------------------------------------------------------------------------
 # VerifyResult parsing — make sure legacy {problem, fix} payloads still parse
 # ---------------------------------------------------------------------------

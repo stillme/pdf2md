@@ -307,4 +307,9 @@ def run_verify_loop(
             except Exception:
                 logger.exception("on_patch_summary callback failed")
 
+    # Loop exhausted. ``best_markdown`` was captured BEFORE the final
+    # round's corrections, so returning it would discard them. Trust the
+    # verifier's last-applied corrections — that's what the loop was for.
+    if current_markdown != best_markdown:
+        return current_markdown, best_confidence
     return best_markdown, best_confidence
