@@ -7,6 +7,37 @@ import pypdfium2 as pdfium
 from pdf2md.extractors.base import ExtractionResult, PageContent, RawFigure
 
 
+def _is_two_column_layout(textpage: pdfium.PdfTextPage, width: float) -> bool:
+    """Heuristic 2-column detection from pdfium char-level bounding boxes.
+
+    A page is flagged as 2-column when the x-coordinate distribution of its
+    chars is bimodal: a left cluster (chars whose center x is in the left
+    third), a right cluster (right third), each holding >=25% of all chars.
+    Single-column pages put nearly all chars in one band; figure/sparse pages
+    fail the minimum-char gate. Returns False on any pdfium error.
+    """
+    try:
+        n = textpage.count_chars()
+    except Exception:
+        return False
+    if n < 200 or width <= 0:
+        return False
+    left_third = width / 3.0
+    right_third = 2.0 * width / 3.0
+    left = right = 0
+    for i in range(n):
+        try:
+            l, _b, r, _t = textpage.get_charbox(i)
+        except Exception:
+            continue
+        cx = (l + r) / 2.0
+        if cx < left_third:
+            left += 1
+        elif cx > right_third:
+            right += 1
+    return left >= 0.25 * n and right >= 0.25 * n
+
+
 class PypdfiumExtractor:
     @property
     def name(self) -> str:
@@ -24,7 +55,7 @@ class PypdfiumExtractor:
 
         pages = []
         for i in range(len(pdf)):
-            page_content = self._extract_single_page(pdf, i)
+            page_content = self._extract_single_page(pdf, i, pdf_bytes)
             pages.append(page_content)
         pdf.close()
         return ExtractionResult(pages=pages, engine=self.name)
@@ -39,21 +70,43 @@ class PypdfiumExtractor:
             pdf.close()
             raise ValueError(f"Page {page_number} out of range (0-{len(pdf) - 1})")
 
-        content = self._extract_single_page(pdf, page_number)
+        content = self._extract_single_page(pdf, page_number, pdf_bytes)
         pdf.close()
         return content
 
-    def _extract_single_page(self, pdf: pdfium.PdfDocument, page_idx: int) -> PageContent:
+    def _extract_single_page(
+        self,
+        pdf: pdfium.PdfDocument,
+        page_idx: int,
+        pdf_bytes: bytes | None = None,
+    ) -> PageContent:
         page = pdf[page_idx]
+        width, height = page.get_size()
 
         textpage = page.get_textpage()
         text = textpage.get_text_range()
+
+        # pdfium returns text in PDF internal order which interleaves columns
+        # on multi-column pages. When a 2-column layout is detected we delegate
+        # to pdfplumber (with ``layout=True``) which preserves reading order.
+        # Single-column pages keep the fast pdfium path so we don't pay the
+        # pdfplumber cost when it's not needed.
+        used_fallback = False
+        if pdf_bytes is not None and _is_two_column_layout(textpage, width):
+            try:
+                # Local import to avoid an import cycle at module load time.
+                from pdf2md.extractors.pdfplumber_ext import PdfplumberExtractor
+                plumber_page = PdfplumberExtractor().extract_page(pdf_bytes, page_idx)
+                if plumber_page.text:
+                    text = plumber_page.text
+                    used_fallback = True
+            except Exception:
+                pass
         textpage.close()
 
-        width, height = page.get_size()
         page_area = width * height
         # Baseline: ~0.0006 chars/pt² represents a normally-dense text page.
-        # Dividing actual density by the baseline gives a ratio ≥ 1 for
+        # Dividing actual density by the baseline gives a ratio >= 1 for
         # content-rich pages, clamped to 1.0.
         baseline_density = page_area * 0.0006
         text_density = len(text) / max(baseline_density, 1)
@@ -62,6 +115,7 @@ class PypdfiumExtractor:
         figures = self._extract_images(page)
         page.close()
 
+        _ = used_fallback  # reserved for future telemetry
         return PageContent(
             page_number=page_idx,
             text=text,

@@ -40,6 +40,25 @@ def _table_confidence(headers: list[str], rows: list[list[str]]) -> float:
     return max(0.0, min(1.0, score))
 
 
+# Collapse the heavy whitespace padding introduced by pdfplumber's
+# ``layout=True`` mode while preserving semantic spacing. Layout mode pads
+# columns with runs of spaces and inserts blank lines for vertical gaps; we
+# only flatten obvious noise (3+ spaces -> 1 space, 3+ blank lines -> 1 blank
+# line) so downstream cleaners see something close to normal prose.
+_RUN_OF_SPACES_RE = re.compile(r" {3,}")
+_RUN_OF_BLANK_LINES_RE = re.compile(r"(?:[ \t]*\n){3,}")
+
+
+def _normalize_layout_whitespace(text: str) -> str:
+    if not text:
+        return text
+    text = _RUN_OF_SPACES_RE.sub(" ", text)
+    text = _RUN_OF_BLANK_LINES_RE.sub("\n\n", text)
+    # Strip trailing spaces left at the end of lines by layout padding.
+    text = "\n".join(line.rstrip() for line in text.split("\n"))
+    return text
+
+
 class PdfplumberExtractor:
     @property
     def name(self) -> str:
@@ -77,7 +96,12 @@ class PdfplumberExtractor:
         return content
 
     def _extract_page(self, page, page_idx: int) -> PageContent:
-        text = page.extract_text() or ""
+        # ``layout=True`` preserves spatial layout so multi-column documents
+        # (e.g. arXiv-style 2-column papers) come out in correct reading order
+        # (top-to-bottom of column 1, then column 2) instead of pdfplumber's
+        # default left-to-right interleaving across columns.
+        text = page.extract_text(layout=True) or ""
+        text = _normalize_layout_whitespace(text)
 
         tables = []
         raw_tables = page.extract_tables() or []
