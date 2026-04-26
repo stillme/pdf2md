@@ -98,6 +98,7 @@ class Document(BaseModel):
     engine_used: str = ""
     tier_used: str = ""
     processing_time_ms: int = 0
+    warnings: list[str] = Field(default_factory=list)
 
     def save_markdown(self, path: str) -> None:
         Path(path).write_text(self.markdown)

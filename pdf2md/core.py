@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from io import BytesIO
 from pathlib import Path
@@ -35,6 +36,8 @@ from pdf2md.providers.registry import get_provider
 from pdf2md.triage.analyzer import analyze_page
 from pdf2md.triage.router import select_engine, select_tier
 from pdf2md.verifier import run_verify_loop
+
+logger = logging.getLogger(__name__)
 
 
 def _resolve_source(source: str | bytes) -> bytes:
@@ -317,8 +320,10 @@ def convert(
                         page_number=page_idx_eq,
                     )
                     all_equations.extend(eqs)
-                except Exception as e:
-                    print(f"  VLM equation extraction failed for page {page_idx_eq}: {e}")
+                except Exception as exc:
+                    msg = f"equation extraction failed on page {page_idx_eq}: {exc}"
+                    logger.warning(msg)
+                    doc.warnings.append(msg)
             if all_equations:
                 doc = doc.model_copy(update={"equations": all_equations})
 
