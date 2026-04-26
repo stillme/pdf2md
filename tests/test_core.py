@@ -90,3 +90,63 @@ def test_deep_tier_preserves_title(sample_pdf_bytes):
     with patch("pdf2md.core._get_vlm_provider", return_value=mock_provider):
         doc = pdf2md.convert(sample_pdf_bytes, tier="deep")
         assert doc.metadata.title is not None, "Title should be preserved after deep tier reassembly"
+
+
+def _generate_math_pdf() -> bytes:
+    """Generate a minimal PDF whose page text contains math symbols."""
+    from io import BytesIO
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import inch
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=letter)
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph("Math Paper", styles["Title"]),
+        Spacer(1, 0.2 * inch),
+        Paragraph("Introduction", styles["Heading1"]),
+        Paragraph(
+            "We study the equation ∇ · (κ∇u) = f on Ω.",
+            styles["Normal"],
+        ),
+        Paragraph(
+            "For all x ∈ Ω we require u ≤ M and ∇u ≠ 0.",
+            styles["Normal"],
+        ),
+    ]
+    doc.build(story)
+    return buf.getvalue()
+
+
+def test_convert_surfaces_equation_extraction_failure():
+    """When VLM equation extraction raises, the failure must surface in
+    doc.warnings without crashing the pipeline."""
+    from unittest.mock import MagicMock, patch
+    import pdf2md
+
+    pdf_bytes = _generate_math_pdf()
+
+    mock_provider = MagicMock()
+    mock_provider.name = "test"
+
+    def side_effect(prompt, image=None, **kwargs):
+        if "mathematical equations" in prompt:
+            raise RuntimeError("VLM API unavailable")
+        return ""
+
+    mock_provider.complete_sync.side_effect = side_effect
+
+    with patch("pdf2md.core._get_vlm_provider", return_value=mock_provider):
+        doc = pdf2md.convert(pdf_bytes, tier="standard", verify=False)
+
+    # Pipeline did not crash and produced a document
+    assert isinstance(doc, Document)
+    # Other content is still present
+    assert len(doc.markdown) > 0
+    assert doc.metadata.pages >= 1
+    # The failure surfaced as a warning
+    assert len(doc.warnings) >= 1
+    assert any("equation extraction failed on page" in w for w in doc.warnings)
+    assert any("VLM API unavailable" in w for w in doc.warnings)
