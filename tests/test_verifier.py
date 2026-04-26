@@ -34,12 +34,24 @@ def test_verify_handles_non_json_response():
     assert result.confidence >= 0.5
 
 
-def test_verify_handles_provider_error():
+def test_verify_page_returns_error_on_provider_exception():
     mock_provider = MagicMock()
     mock_provider.complete_sync.side_effect = Exception("API error")
     result = verify_page(page_image=b"fake_image", extracted_markdown="Some text.", provider=mock_provider)
-    assert result.status == "pass"
-    assert result.confidence <= 0.5
+    assert result.status == "error"
+    assert result.confidence == 0.0
+    assert result.corrections == []
+    assert "API error" in result.explanation
+
+
+def test_run_verify_loop_does_not_loop_on_error():
+    mock_provider = MagicMock()
+    mock_provider.complete_sync.side_effect = Exception("network down")
+    original = "Some original markdown."
+    markdown, confidence = run_verify_loop(b"fake_image", original, mock_provider, max_rounds=3)
+    assert markdown == original
+    assert confidence == 0.0
+    assert mock_provider.complete_sync.call_count == 1
 
 
 def test_verify_loop_passes_immediately():

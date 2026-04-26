@@ -1,6 +1,6 @@
 """VLM provider protocol and data models."""
 from __future__ import annotations
-from typing import Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 from pydantic import BaseModel, Field
 
 
@@ -17,8 +17,11 @@ def detect_image_mime(data: bytes) -> str:
     return "image/png"  # fallback
 
 
+VerifyStatus = Literal["pass", "fail", "error"]
+
+
 class VerifyResult(BaseModel):
-    status: str  # "pass" or "fail"
+    status: VerifyStatus = "pass"
     confidence: float = 0.0
     corrections: list[dict] = Field(default_factory=list)
     explanation: str = ""

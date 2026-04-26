@@ -93,11 +93,11 @@ def verify_page(
         return _parse_verify_response(response)
     except Exception as exc:
         logger.warning("Verification failed: %s", exc)
-        # On provider error, return low-confidence pass to avoid blocking
         return VerifyResult(
-            status="pass",
-            confidence=0.3,
-            explanation=f"Verification skipped due to error: {exc}",
+            status="error",
+            confidence=0.0,
+            corrections=[],
+            explanation=f"Verification failed due to provider error: {exc}",
         )
 
 
@@ -133,6 +133,10 @@ def run_verify_loop(
     Verifies the markdown against the page image. If the verifier finds
     issues, applies corrections and re-verifies, up to max_rounds times.
 
+    If the verifier returns ``status == "error"`` (a provider failure),
+    the loop terminates immediately without applying corrections and
+    returns the original markdown with confidence ``0.0``.
+
     Args:
         page_image: PNG bytes of the rendered page.
         extracted_markdown: Initial markdown to verify.
@@ -148,6 +152,10 @@ def run_verify_loop(
 
     for round_num in range(max_rounds):
         result = verify_page(page_image, current_markdown, provider)
+
+        # Provider error: do not apply corrections, terminate immediately
+        if result.status == "error":
+            return extracted_markdown, 0.0
 
         # Track the best result
         if result.confidence > best_confidence:
