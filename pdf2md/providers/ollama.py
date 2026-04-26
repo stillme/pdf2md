@@ -4,6 +4,7 @@ import base64
 import httpx
 
 from pdf2md.cache import cached_call
+from pdf2md.providers._ratelimit import RateLimiter, is_connection_error
 
 
 class OllamaProvider:
@@ -14,6 +15,11 @@ class OllamaProvider:
 
     def __init__(self, model: str | None = None) -> None:
         self._model = model or self._DEFAULT_MODEL
+        # Local server: no quota, but retry transient connection blips
+        # (e.g. cold start, brief socket unavailability).
+        self._limiter = RateLimiter(
+            min_interval_s=0.0, max_retries=2, retry_on=is_connection_error,
+        )
 
     @property
     def name(self) -> str:
@@ -43,7 +49,8 @@ class OllamaProvider:
             return data["response"]
 
         return cached_call(
-            _call, prompt=prompt, model=self._model, image=image, provider=self.name,
+            lambda: self._limiter.call(_call),
+            prompt=prompt, model=self._model, image=image, provider=self.name,
         )
 
     async def complete(self, prompt: str, image: bytes | None = None) -> str:
