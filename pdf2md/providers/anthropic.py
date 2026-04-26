@@ -5,6 +5,7 @@ import os
 import httpx
 
 from pdf2md.cache import cached_call
+from pdf2md.providers._ratelimit import RateLimiter, is_429_or_529
 
 
 class AnthropicProvider:
@@ -16,6 +17,11 @@ class AnthropicProvider:
 
     def __init__(self, model: str | None = None) -> None:
         self._model = model or self._DEFAULT_MODEL
+        # Standard tier comfortably handles 2 RPS; 0.5s spacing leaves headroom
+        # and 529 (overloaded) is treated like a transient rate-limit hit.
+        self._limiter = RateLimiter(
+            min_interval_s=0.5, max_retries=3, retry_on=is_429_or_529,
+        )
 
     @property
     def name(self) -> str:
@@ -60,7 +66,8 @@ class AnthropicProvider:
             return data["content"][0]["text"]
 
         return cached_call(
-            _call, prompt=prompt, model=self._model, image=image, provider=self.name,
+            lambda: self._limiter.call(_call),
+            prompt=prompt, model=self._model, image=image, provider=self.name,
         )
 
     async def complete(self, prompt: str, image: bytes | None = None) -> str:
