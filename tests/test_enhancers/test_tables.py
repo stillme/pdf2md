@@ -29,3 +29,12 @@ def test_enhance_table_no_provider_unchanged():
                   headers=["A"], rows=[["1"]], page=0, confidence=0.3)
     result = enhance_table(table, provider=None)
     assert result.markdown == table.markdown
+
+
+def test_low_confidence_table_triggers_vlm_enhancement():
+    table = Table(id="tab1", markdown="| A | B |\n|---|---|\n| 1 | 2 |",
+                  headers=["A", "B"], rows=[["1", "2"]], page=0, confidence=0.5)
+    mock_provider = MagicMock()
+    mock_provider.complete_sync.return_value = "| A | B |\n|---|---|\n| 1 | 2 |"
+    enhance_table(table, provider=mock_provider, page_image=b"fake")
+    mock_provider.complete_sync.assert_called_once()

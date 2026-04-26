@@ -3,10 +3,41 @@
 from __future__ import annotations
 
 import io
+import re
 
 import pdfplumber
 
 from pdf2md.extractors.base import ExtractionResult, PageContent, RawTable
+
+_NUMERIC_RE = re.compile(r"^[\s\-+()$%]*\d[\d.,\s%]*[\s\-+()$%]*$")
+
+
+def _table_confidence(headers: list[str], rows: list[list[str]]) -> float:
+    """Score a table 0-1 from padding ratio, column variance, header sanity, and shape."""
+    if not headers or not rows:
+        return 0.2
+    n_cols = len(headers)
+    score = 1.0
+    if n_cols < 2:
+        score -= 0.4
+    if len(rows) < 2:
+        score -= 0.4
+    # Column variance: rows that don't match header width
+    ragged = sum(1 for r in rows if len(r) != n_cols)
+    if ragged:
+        score -= 0.15 + min(0.35, 0.35 * ragged / max(1, len(rows)))
+    # Padding ratio: empty cells / total cells (across header + rows)
+    cells = [c for r in [headers] + rows for c in r]
+    if cells:
+        empty = sum(1 for c in cells if not c.strip())
+        score -= min(0.5, (empty / len(cells)) * 0.7)
+    # Header sanity: numeric-looking header cells suggest data-as-header
+    non_empty_headers = [h for h in headers if h.strip()]
+    if non_empty_headers:
+        numeric = sum(1 for h in non_empty_headers if _NUMERIC_RE.match(h.strip()))
+        if numeric / len(non_empty_headers) > 0.5:
+            score -= 0.3
+    return max(0.0, min(1.0, score))
 
 
 class PdfplumberExtractor:
@@ -63,7 +94,8 @@ class PdfplumberExtractor:
 
             markdown = self._table_to_markdown(headers, rows)
             tables.append(RawTable(
-                markdown=markdown, headers=headers, rows=rows, confidence=0.8,
+                markdown=markdown, headers=headers, rows=rows,
+                confidence=_table_confidence(headers, rows),
             ))
 
         confidence = 0.8 if len(text) > 50 else 0.3
