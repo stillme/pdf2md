@@ -7,5 +7,6 @@ build/
 .ruff_cache/
 .pytest_cache/
 benchmark-outputs/
-benchmark-outputs/
 autoresearch/runs/
+.claude/
+uv.lock
