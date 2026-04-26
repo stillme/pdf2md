@@ -55,3 +55,48 @@ def test_select_engine_prefers_marker_when_available():
         available_engines=["pypdfium2", "pdfplumber", "marker"],
     )
     assert engines[0] == "marker"
+
+
+def test_select_engine_scanned_with_vlm():
+    engines = select_engine(
+        Tier.STANDARD,
+        has_text_layer=False,
+        available_engines=["pypdfium2", "pdfplumber", "marker"],
+        is_scanned=True,
+        vlm_available=True,
+    )
+    assert engines[0] == "vlm"
+
+
+def test_select_engine_scanned_without_vlm():
+    engines = select_engine(
+        Tier.STANDARD,
+        has_text_layer=False,
+        available_engines=["pypdfium2", "pdfplumber", "marker"],
+        is_scanned=True,
+        vlm_available=False,
+    )
+    assert "vlm" not in engines
+    assert engines[0] == "marker"
+
+
+def test_select_engine_scanned_fast_tier_skips_vlm():
+    engines = select_engine(
+        Tier.FAST,
+        has_text_layer=False,
+        available_engines=["pypdfium2", "pdfplumber"],
+        is_scanned=True,
+        vlm_available=True,
+    )
+    assert "vlm" not in engines
+
+
+def test_select_engine_native_text_with_vlm():
+    engines = select_engine(
+        Tier.STANDARD,
+        has_text_layer=True,
+        available_engines=["pypdfium2", "pdfplumber", "marker"],
+        is_scanned=False,
+        vlm_available=True,
+    )
+    assert "vlm" not in engines

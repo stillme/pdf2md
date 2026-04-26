@@ -21,6 +21,8 @@ def select_engine(
     has_text_layer: bool = True,
     available_engines: list[str] | None = None,
     has_tables: bool = False,
+    is_scanned: bool = False,
+    vlm_available: bool = False,
 ) -> list[str]:
     if available_engines is None:
         available_engines = ["pypdfium2", "pdfplumber"]
@@ -36,6 +38,8 @@ def select_engine(
             engines.append("pdfplumber")
 
     elif tier in (Tier.STANDARD, Tier.DEEP):
+        if is_scanned and vlm_available:
+            engines.append("vlm")
         if "marker" in available_engines:
             engines.append("marker")
         elif "docling" in available_engines:
