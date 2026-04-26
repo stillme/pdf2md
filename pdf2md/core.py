@@ -151,6 +151,13 @@ def convert(
     available = get_available_extractors()
     available_names = [ext.name for ext in available]
 
+    # Probe VLM provider once so the router can prefer VLM for scanned pages.
+    try:
+        routing_vlm = _get_vlm_provider(config.provider)
+    except Exception:
+        routing_vlm = None
+    vlm_available = routing_vlm is not None
+
     # Process each page: triage -> select tier/engines -> extract
     all_pages: list[PageContent] = []
 
@@ -165,14 +172,20 @@ def convert(
             has_text_layer=analysis.has_text_layer,
             available_engines=available_names,
             has_tables=analysis.has_tables,
+            is_scanned=analysis.is_scanned,
+            vlm_available=vlm_available,
         )
 
         # Extract with primary engine
         primary_engine_name = engines[0] if engines else "pypdfium2"
-        primary_ext = get_extractor_by_name(primary_engine_name)
-        if primary_ext is None:
-            # Fallback
-            primary_ext = get_extractor_by_name("pypdfium2")
+        if primary_engine_name == "vlm" and routing_vlm is not None:
+            from pdf2md.extractors.vlm_ext import VLMExtractor
+            primary_ext = VLMExtractor(routing_vlm)
+        else:
+            primary_ext = get_extractor_by_name(primary_engine_name)
+            if primary_ext is None:
+                # Fallback
+                primary_ext = get_extractor_by_name("pypdfium2")
 
         page_content = primary_ext.extract_page(pdf_bytes, page_idx)
 

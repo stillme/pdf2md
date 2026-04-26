@@ -95,6 +95,8 @@ pip install pdf2md[dev]
 
 The `auto` tier (default) inspects each page for text layers, table complexity, figure density, and layout structure, then picks the cheapest tier that will produce accurate output.
 
+On scanned pages, the `standard` and `deep` tiers route extraction through the configured VLM provider for OCR; if no VLM is available, they fall back to marker / pypdfium2.
+
 ## Benchmark
 
 Tested on 6 real papers (fast tier, no VLM):
