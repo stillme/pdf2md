@@ -4,6 +4,8 @@ import base64
 import os
 import httpx
 
+from pdf2md.cache import cached_call
+
 
 class AnthropicProvider:
     """Anthropic Claude provider via the Messages REST API."""
@@ -40,21 +42,26 @@ class AnthropicProvider:
         }
 
     def complete_sync(self, prompt: str, image: bytes | None = None) -> str:
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        payload = self._build_payload(prompt, image)
-        response = httpx.post(
-            self._BASE_URL,
-            json=payload,
-            headers={
-                "x-api-key": api_key,
-                "anthropic-version": self._API_VERSION,
-                "content-type": "application/json",
-            },
-            timeout=60,
+        def _call() -> str:
+            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+            payload = self._build_payload(prompt, image)
+            response = httpx.post(
+                self._BASE_URL,
+                json=payload,
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": self._API_VERSION,
+                    "content-type": "application/json",
+                },
+                timeout=60,
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data["content"][0]["text"]
+
+        return cached_call(
+            _call, prompt=prompt, model=self._model, image=image, provider=self.name,
         )
-        response.raise_for_status()
-        data = response.json()
-        return data["content"][0]["text"]
 
     async def complete(self, prompt: str, image: bytes | None = None) -> str:
         return self.complete_sync(prompt, image)

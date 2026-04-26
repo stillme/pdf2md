@@ -4,6 +4,8 @@ import base64
 import os
 import httpx
 
+from pdf2md.cache import cached_call
+
 
 class OpenAIProvider:
     """OpenAI GPT provider via the Chat Completions REST API."""
@@ -37,20 +39,25 @@ class OpenAIProvider:
         }
 
     def complete_sync(self, prompt: str, image: bytes | None = None) -> str:
-        api_key = os.environ.get("OPENAI_API_KEY", "")
-        payload = self._build_payload(prompt, image)
-        response = httpx.post(
-            self._BASE_URL,
-            json=payload,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            timeout=60,
+        def _call() -> str:
+            api_key = os.environ.get("OPENAI_API_KEY", "")
+            payload = self._build_payload(prompt, image)
+            response = httpx.post(
+                self._BASE_URL,
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                timeout=60,
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data["choices"][0]["message"]["content"]
+
+        return cached_call(
+            _call, prompt=prompt, model=self._model, image=image, provider=self.name,
         )
-        response.raise_for_status()
-        data = response.json()
-        return data["choices"][0]["message"]["content"]
 
     async def complete(self, prompt: str, image: bytes | None = None) -> str:
         return self.complete_sync(prompt, image)
