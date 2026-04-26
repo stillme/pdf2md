@@ -20,10 +20,26 @@ def detect_image_mime(data: bytes) -> str:
 VerifyStatus = Literal["pass", "fail", "error"]
 
 
+class VerifyCorrection(BaseModel):
+    """Structured correction patch.
+
+    The combination of ``before_context + original + after_context`` is used
+    to locate the unique replacement site in the markdown. If the contexts
+    are empty (e.g. legacy ``{problem, fix}`` payloads converted at parse
+    time), the patch only applies when ``original`` occurs exactly once.
+    """
+
+    region: str = ""
+    before_context: str = ""  # ~30 chars before the original text
+    after_context: str = ""   # ~30 chars after
+    original: str             # exact text to replace
+    replacement: str          # new text
+
+
 class VerifyResult(BaseModel):
     status: VerifyStatus = "pass"
     confidence: float = 0.0
-    corrections: list[dict] = Field(default_factory=list)
+    corrections: list[VerifyCorrection] = Field(default_factory=list)
     explanation: str = ""
 
 

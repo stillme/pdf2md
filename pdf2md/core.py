@@ -345,15 +345,32 @@ def convert(
         vlm_verify = _get_vlm_provider(config.provider)
         if vlm_verify is not None:
             corrected_pages = list(all_pages)
+            verify_warnings: list[str] = []
             for i, page in enumerate(corrected_pages):
                 page_image = _render_page_image(pdf_bytes, page.page_number)
                 if page_image is None:
                     continue
+
+                page_num = page.page_number
+
+                def _record(summary, _page_num=page_num):
+                    if (
+                        summary.skipped_no_match
+                        or summary.skipped_ambiguous
+                    ):
+                        verify_warnings.append(
+                            f"verify page {_page_num}: "
+                            f"{summary.applied} applied, "
+                            f"{summary.skipped_no_match} no-match, "
+                            f"{summary.skipped_ambiguous} ambiguous"
+                        )
+
                 corrected_md, confidence = run_verify_loop(
                     page_image,
                     page.text,
                     vlm_verify,
                     max_rounds=config.max_verify_rounds,
+                    on_patch_summary=_record,
                 )
                 corrected_pages[i] = page.model_copy(update={
                     "text": corrected_md,
@@ -372,6 +389,11 @@ def convert(
                 "doi": meta.doi or doc.metadata.doi,
             })
             doc = doc.model_copy(update={"metadata": updated_meta})
+
+            if verify_warnings:
+                doc = doc.model_copy(update={
+                    "warnings": [*doc.warnings, *verify_warnings],
+                })
 
     doc = doc.model_copy(update={
         "figure_index": build_figure_index(doc.markdown, doc.figures),
