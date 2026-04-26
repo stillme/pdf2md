@@ -9,3 +9,7 @@ build/
 benchmark-outputs/
 benchmark-outputs/
 autoresearch/runs/
+
+# macOS Finder metadata
+.DS_Store
+**/.DS_Store

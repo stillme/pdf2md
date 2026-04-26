@@ -2,10 +2,23 @@
 
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import httpx
+
+
+DEFAULT_BENCHMARK_DIR = "~/pdf2md-benchmarks"
+
+
+def _resolve_local_path(local_filename: str) -> Path:
+    """Resolve a benchmark paper's basename to an absolute path under the
+    benchmark directory (overridable via the ``PDF2MD_BENCHMARK_DIR`` env var).
+    """
+    base = os.environ.get("PDF2MD_BENCHMARK_DIR", DEFAULT_BENCHMARK_DIR)
+    return Path(base).expanduser() / local_filename
 
 
 # Real open-access papers for benchmarking (arXiv, all CC-licensed)
@@ -44,7 +57,7 @@ BENCHMARK_PAPERS = [
     },
     {
         "name": "nature-gut-adaptation",
-        "path": "/Users/tmayassi/Downloads/s41586-024-08216-z.pdf",
+        "local_filename": "s41586-024-08216-z.pdf",
         "url": "",
         "expected_pages": 41,
         "has_tables": True,
@@ -53,7 +66,7 @@ BENCHMARK_PAPERS = [
     },
     {
         "name": "dg-emi-model-math",
-        "path": "/Users/tmayassi/Downloads/2411.02646v1.pdf",
+        "local_filename": "2411.02646v1.pdf",
         "url": "https://arxiv.org/pdf/2411.02646v1",
         "expected_pages": 30,
         "has_tables": True,
@@ -86,24 +99,31 @@ class BenchmarkResult:
 
 
 def _load_pdf(paper: dict, skip_errors: bool = True) -> bytes | None:
-    """Load PDF bytes from local path or URL."""
-    source = paper.get("path") or paper.get("url", "")
-    name = paper["name"]
+    """Load PDF bytes from a portable local path or URL.
 
-    if source.startswith("/") or source.startswith("~"):
-        from pathlib import Path
-        p = Path(source).expanduser()
-        if not p.exists():
-            if skip_errors:
-                print(f"  SKIP: Local file not found: {p}")
-                return None
-            raise FileNotFoundError(f"Local file not found: {p}")
-        pdf_bytes = p.read_bytes()
-        print(f"  Loaded: {len(pdf_bytes):,} bytes (local)")
-        return pdf_bytes
-    else:
+    Resolution order:
+      1. ``local_filename`` (a basename) resolved under
+         ``$PDF2MD_BENCHMARK_DIR`` (default ``~/pdf2md-benchmarks``) — if it
+         exists, use it.
+      2. Otherwise fall through to ``url`` if one is set.
+      3. Otherwise skip with a clear message (or raise when
+         ``skip_errors=False``).
+    """
+    name = paper["name"]
+    local_filename = paper.get("local_filename", "")
+    url = paper.get("url", "")
+
+    local_path: Path | None = None
+    if local_filename:
+        local_path = _resolve_local_path(local_filename)
+        if local_path.exists():
+            pdf_bytes = local_path.read_bytes()
+            print(f"  Loaded: {len(pdf_bytes):,} bytes (local: {local_path})")
+            return pdf_bytes
+
+    if url:
         r = httpx.get(
-            source, follow_redirects=True, timeout=60,
+            url, follow_redirects=True, timeout=60,
             headers={"User-Agent": "pdf2md-benchmark/1.0"},
         )
         if r.status_code != 200 or r.content[:5] != b"%PDF-":
@@ -114,6 +134,18 @@ def _load_pdf(paper: dict, skip_errors: bool = True) -> bytes | None:
         pdf_bytes = r.content
         print(f"  Downloaded: {len(pdf_bytes):,} bytes")
         return pdf_bytes
+
+    msg_parts = []
+    if local_path is not None:
+        msg_parts.append(f"local file not found at {local_path}")
+    if not url:
+        msg_parts.append("no URL configured")
+    detail = "; ".join(msg_parts) or "no source available"
+    message = f"No source for paper {name!r} ({detail})"
+    if skip_errors:
+        print(f"  SKIP: {message}")
+        return None
+    raise FileNotFoundError(message)
 
 
 def _convert_paper(
@@ -191,7 +223,7 @@ def run_benchmarks(
 
     for paper in papers:
         name = paper["name"]
-        source = paper.get("path") or paper.get("url", "")
+        source = paper.get("url") or paper.get("local_filename", "")
         print(f"\n{'='*60}")
         print(f"Benchmark: {name}")
         print(f"Source: {source[:80]}")
@@ -240,7 +272,7 @@ def run_tier_comparison(
 
     for paper in papers:
         name = paper["name"]
-        source = paper.get("path") or paper.get("url", "")
+        source = paper.get("url") or paper.get("local_filename", "")
         print(f"\n{'='*60}")
         print(f"Paper: {name}")
         print(f"Source: {source[:80]}")
