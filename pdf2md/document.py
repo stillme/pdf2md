@@ -77,11 +77,16 @@ class Equation(BaseModel):
 
 class Reference(BaseModel):
     id: str
+    raw: str = ""
     authors: list[str] = Field(default_factory=list)
     title: str = ""
     journal: str | None = None
     year: str | None = None
+    volume: str | None = None
+    pages: str | None = None
     doi: str | None = None
+    url: str | None = None
+    confidence: float = 0.0
 
 
 class Document(BaseModel):

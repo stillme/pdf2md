@@ -27,6 +27,7 @@ from pdf2md.enhancers.figure_index import build_figure_index
 from pdf2md.enhancers.figures import enhance_figures
 from pdf2md.enhancers.math import convert_unicode_math, detect_math_regions, extract_equations_vlm
 from pdf2md.enhancers.metadata import extract_metadata
+from pdf2md.enhancers.references import parse_references
 from pdf2md.enhancers.tables import enhance_table
 from pdf2md.enhancers.superscripts import detect_superscripts
 from pdf2md.enhancers.text_cleaner import clean_figure_text
@@ -398,6 +399,13 @@ def convert(
 
     doc = doc.model_copy(update={
         "figure_index": build_figure_index(doc.markdown, doc.figures),
+    })
+
+    # Bibliography parsing: structured Reference entries for the
+    # ``References`` / ``Bibliography`` section. Runs before cross-reference
+    # linking so downstream consumers see populated ``doc.bibliography``.
+    doc = doc.model_copy(update={
+        "bibliography": parse_references(doc.markdown),
     })
 
     # Cross-reference linking: turn "Fig. 3", "Section 4.2", "[12]" into
