@@ -65,6 +65,20 @@ _CELL_STATE_LABEL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Mouse gene-family tokens that appear in heatmap row labels but rarely
+# in body prose. ``Slc15a1`` / ``Slc25a5`` etc. dominate the leaked
+# heatmap rows from the Nature paper. A line with multiple such tokens
+# is almost certainly an axis-label leak rather than narrative text.
+_HEATMAP_GENE_TOKEN_RE = re.compile(
+    r"\b(?:Slc|Cyp|Mt|Ifit|Defa|Reg|Hoxb|Nlrp|Wfdc|Ly6|Marcksl|Itln|"
+    r"Clca|Muc|Gata|Klf|Foxa|Hnf|Gli)\d+[a-z]?\d*\b"
+)
+# Single uppercase letters or pairs that appear in a row are the
+# fingerprint of vertical-text axis labels being read horizontally —
+# pdfplumber emits them as ``A B c d`` etc. Five or more in one line
+# is the leak signature.
+_VERTICAL_TEXT_TOKEN_RE = re.compile(r"(?<!\S)[A-Z](?:[a-z])?(?=\s|$)")
+
 
 def _is_figure_label_line(line: str) -> bool:
     """Determine if a single line looks like a figure element label.
@@ -263,17 +277,125 @@ def _is_figure_leak_block(lines: list[str], start: int, min_block_size: int = 3)
     return False, start
 
 
+def _is_heatmap_axis_leak(line: str) -> bool:
+    """Return True for lines that look like a heatmap row dumped as text.
+
+    The Nature paper's solute-transporter heatmap leaks rows like:
+
+        Slc15a1 O Cl x – alate J1, C3 Slc36a1 ... Slc6a8 Protons J2, C3
+        Slc10a2 A A d d e e n n o o s s i i n n e e t r i p h o s p h a t e
+
+    Two combinable signals:
+    1. Multiple ``Slc##`` style gene tokens (>= 2). Body prose almost
+       never lists more than one gene from a family on a single line.
+    2. Many single-uppercase-letter tokens (>= 5). Vertical axis labels
+       come out of pdfplumber as horizontal runs of isolated capitals
+       interleaved with the actual text — a very specific fingerprint.
+
+    Any one of the two signals is enough — both at once is conclusive.
+    """
+    stripped = line.strip()
+    if len(stripped) < 30:
+        return False
+
+    gene_hits = len(_HEATMAP_GENE_TOKEN_RE.findall(stripped))
+    if gene_hits >= 2:
+        return True
+
+    # The vertical-text fingerprint: a long run of single-character tokens
+    # (case-insensitive — the leak interleaves both ``A A`` and ``d d``)
+    # mixed with short fragments. Real prose almost never produces 8+
+    # single-char tokens on a line, so the count is safe to gate on.
+    tokens = stripped.split()
+    if len(tokens) >= 8:
+        single_chars = sum(1 for t in tokens if len(t) == 1 and t.isalpha())
+        if single_chars >= 8 and single_chars / len(tokens) >= 0.4:
+            return True
+        # Combination: at least one Slc-family gene plus dense vertical-text
+        # fragments is also a heatmap row even if the gene token is alone.
+        if gene_hits >= 1 and single_chars >= 6:
+            return True
+
+    return False
+
+
+def _is_short_biology_term_line(line: str) -> bool:
+    """Tight filter for short axis-label fragments adjacent to a heatmap leak.
+
+    The signal is: 1-6 tokens, no sentence verbs, mostly noun-like (capital
+    or chemical), and short. Used only when the previous or next line was
+    already classified as a heatmap leak — the adjacency is what makes
+    this safe. On its own this filter is too aggressive for body prose.
+    """
+    stripped = line.strip()
+    if not stripped or len(stripped) > 50:
+        return False
+    tokens = stripped.split()
+    if not (1 <= len(tokens) <= 6):
+        return False
+    # Real prose almost always contains an English glue word.
+    lower_tokens = {t.strip(",.;:()-").lower() for t in tokens}
+    if lower_tokens & _SENTENCE_WORDS:
+        return False
+    # Lines ending with sentence punctuation are rarely axis fragments.
+    if stripped[-1] in ".!?":
+        return False
+    return True
+
+
+def _adjacent_heatmap_leaks(lines: list[str]) -> set[int]:
+    """Return indices of lines that are short biology fragments inside a
+    heatmap-leak neighbourhood.
+
+    Two-pass: first locate every line classified as a heatmap leak, then
+    sweep up to three lines above and below each one absorbing short
+    biology-term fragments (``Bile acids``, ``Short chain fatty acids``).
+    These are the orphan rows of a complex heatmap that survive the
+    primary fingerprint check because they're shorter or have no Slc
+    token of their own.
+    """
+    seeds = [i for i, line in enumerate(lines) if _is_heatmap_axis_leak(line)]
+    if not seeds:
+        return set()
+
+    extra: set[int] = set()
+    for seed in seeds:
+        for direction in (-1, 1):
+            for offset in range(1, 4):
+                idx = seed + direction * offset
+                if not 0 <= idx < len(lines):
+                    break
+                # Stop sweeping past blank lines or figure markers — those
+                # mark the edges of the heatmap region.
+                stripped = lines[idx].strip()
+                if not stripped:
+                    break
+                if stripped.startswith("![") or stripped.startswith("<a "):
+                    break
+                if _has_strong_sentence_structure(stripped):
+                    break
+                if _is_short_biology_term_line(stripped):
+                    extra.add(idx)
+                    continue
+                # Don't keep walking past content we don't want to drop.
+                break
+    return extra
+
+
 def clean_figure_text(text: str) -> str:
     """Remove figure axis labels, gene lists, and panel annotations that leaked into body text.
 
     Uses conservative heuristics:
     1. Detect blocks of 3+ consecutive short lines without sentence structure
     2. Remove individual lines that match strong figure-label patterns AND are under 20 chars
+    3. Remove individual heatmap-axis-leak lines (gene-family / vertical-text fingerprints)
+    4. Sweep short biology-term fragments adjacent to a known heatmap leak
 
     Real content is preserved — only strips when high confidence of figure-leak.
     """
     text = _LEGEND_DETAIL_PAREN_RE.sub("", text)
     lines = text.split('\n')
+    adjacent_leaks = _adjacent_heatmap_leaks(lines)
     result: list[str] = []
     i = 0
 
@@ -281,6 +403,10 @@ def clean_figure_text(text: str) -> str:
         stripped = lines[i].strip()
 
         if _NEXT_PAGE_CAPTION_LINE_RE.match(stripped):
+            i += 1
+            continue
+
+        if i in adjacent_leaks:
             i += 1
             continue
 
@@ -297,6 +423,10 @@ def clean_figure_text(text: str) -> str:
             continue
 
         if _is_cell_state_label_line(stripped):
+            i += 1
+            continue
+
+        if _is_heatmap_axis_leak(stripped):
             i += 1
             continue
 

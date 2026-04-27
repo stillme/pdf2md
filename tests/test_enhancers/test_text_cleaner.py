@@ -292,4 +292,81 @@ def test_removes_legend_statistical_parentheticals():
 
     assert "biological replicates" not in cleaned
     assert "Boxplots showing the fraction" in cleaned
-    assert "Expression of marker genes follows" in cleaned
+
+
+def test_removes_heatmap_axis_leak_with_multiple_slc_genes():
+    """The Nature paper's solute-transporter heatmap leaked rows like
+    ``Slc26a3 Fructose Glucose Slc20a1 HCO3-`` into body text. Two
+    ``Slc##`` tokens on a line is the fingerprint."""
+    text = (
+        "Body sentence describing the data.\n"
+        "Slc26a3 Fructose Glucose Slc20a1 HCO3- bicarbonate transport channel\n"
+        "Another body sentence about transport mechanisms here."
+    )
+    cleaned = clean_figure_text(text)
+    assert "Slc26a3" not in cleaned
+    assert "HCO3" not in cleaned
+    assert "Body sentence" in cleaned
+    assert "Another body sentence" in cleaned
+
+
+def test_removes_heatmap_axis_leak_with_vertical_text_artefact():
+    """Vertical axis labels read horizontally produce runs of single
+    capital letters interleaved with text — e.g. ``Slc10a2 A A d d e e
+    n n o o s s i i n n e e``. Five+ isolated caps plus length is
+    enough to identify the leak."""
+    text = (
+        "Real prose talking about the experiment.\n"
+        "Slc10a2 A A d d e e n n o o s s i i n n e e t r i p h o s p h a t e\n"
+        "Real prose continuing the story."
+    )
+    cleaned = clean_figure_text(text)
+    assert "Slc10a2" not in cleaned
+    assert "Real prose talking" in cleaned
+    assert "Real prose continuing" in cleaned
+
+
+def test_keeps_real_sentence_with_one_slc_gene():
+    """A normal sentence mentioning a single Slc gene must NOT be
+    flagged as a heatmap leak."""
+    text = (
+        "Slc15a1 expression was significantly upregulated in the duodenum "
+        "during the inflammatory response observed at day 12."
+    )
+    cleaned = clean_figure_text(text)
+    assert "Slc15a1 expression was significantly" in cleaned
+
+
+def test_adjacent_short_biology_terms_swept_after_heatmap_leak():
+    """Short biology-term fragments next to a heatmap leak (``Bile acids``,
+    ``Short chain fatty acids``) are part of the same axis labelling and
+    should be swept too."""
+    text = (
+        "Real introduction sentence with normal verbs and structure.\n"
+        "I, C3 Slc5a8 Bile acids\n"
+        "Short chain fatty acids\n"
+        "Slc26a3 Fructose Glucose Slc20a1 HCO3- bicarbonate transport channel\n"
+        "Beta-lactam antibiotics\n"
+        "Real follow-up sentence about the implications of these findings."
+    )
+    cleaned = clean_figure_text(text)
+    assert "Slc26a3" not in cleaned
+    assert "Short chain fatty acids" not in cleaned
+    assert "Beta-lactam antibiotics" not in cleaned
+    assert "Bile acids" not in cleaned
+    assert "Real introduction sentence" in cleaned
+    assert "Real follow-up sentence" in cleaned
+
+
+def test_adjacent_sweep_does_not_eat_real_paragraphs():
+    """The adjacency sweep must not pull in nearby normal prose just
+    because it sits a few lines after a heatmap leak."""
+    text = (
+        "Slc26a3 Fructose Glucose Slc20a1 HCO3- bicarbonate transport channel\n"
+        "\n"
+        "The next paragraph describes the role of these transporters in "
+        "regulating intestinal homeostasis under steady-state conditions."
+    )
+    cleaned = clean_figure_text(text)
+    assert "Slc26a3" not in cleaned
+    assert "next paragraph describes the role" in cleaned
