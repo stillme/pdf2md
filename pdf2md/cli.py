@@ -107,6 +107,127 @@ def benchmark(tier, max_papers, compare, provider, output_dir):
 
 
 @main.command()
+@click.argument("input_path")
+@click.option(
+    "-o", "--output-dir",
+    required=True,
+    help="Directory where per-paper .md and .json outputs are written.",
+)
+@click.option(
+    "--tier",
+    type=click.Choice(["fast", "standard", "deep"], case_sensitive=False),
+    default="standard",
+    help="Processing tier (default: standard).",
+)
+@click.option("--provider", default=None, help="VLM provider override.")
+@click.option(
+    "--figures",
+    type=click.Choice(["skip", "caption", "describe", "extract"], case_sensitive=False),
+    default="describe",
+    help="Figure handling mode (default: describe).",
+)
+@click.option(
+    "--equations/--no-equations",
+    default=True,
+    help="VLM equation extraction. Disable for biomedical / text-heavy batches.",
+)
+@click.option("--verify/--no-verify", default=True, help="Run verification passes.")
+@click.option(
+    "--concurrency",
+    type=int,
+    default=1,
+    help="Parallel workers. Default 1; raise only with high-quota providers.",
+)
+@click.option(
+    "--checkpoint",
+    default=None,
+    help="Checkpoint JSON path (default: <output-dir>/.pdf2md-batch.json).",
+)
+@click.option(
+    "--resume/--no-resume",
+    default=True,
+    help="Skip papers already marked completed in the checkpoint.",
+)
+@click.option(
+    "--max-papers",
+    type=int,
+    default=None,
+    help="Limit to the first N papers (after sorted discovery).",
+)
+def batch(
+    input_path,
+    output_dir,
+    tier,
+    provider,
+    figures,
+    equations,
+    verify,
+    concurrency,
+    checkpoint,
+    resume,
+    max_papers,
+):
+    """Convert a directory or glob of PDFs to markdown.
+
+    INPUT_PATH may be a directory (recursively scanned for *.pdf) or a glob
+    pattern. Per-paper failures are isolated and recorded in the checkpoint
+    so the batch keeps running. Re-running on the same output directory
+    resumes from the last checkpoint.
+    """
+    from pathlib import Path
+    from pdf2md.batch import (
+        discover_pdfs,
+        format_summary_table,
+        run_batch,
+        stderr_progress_printer,
+    )
+
+    try:
+        inputs = discover_pdfs(input_path)
+    except FileNotFoundError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    if not inputs:
+        click.echo(f"No PDFs found at {input_path}", err=True)
+        sys.exit(1)
+
+    if max_papers is not None:
+        inputs = inputs[:max_papers]
+
+    out_dir = Path(output_dir)
+    checkpoint_path = Path(checkpoint) if checkpoint else None
+
+    click.echo(
+        f"Processing {len(inputs)} PDFs -> {out_dir} "
+        f"(tier={tier}, concurrency={concurrency}, resume={resume})",
+        err=True,
+    )
+
+    summary = run_batch(
+        inputs=inputs,
+        output_dir=out_dir,
+        tier=tier,
+        provider=provider,
+        figures=figures,
+        equations=equations,
+        verify=verify,
+        concurrency=concurrency,
+        checkpoint_path=checkpoint_path,
+        resume=resume,
+        on_progress=stderr_progress_printer(),
+    )
+
+    click.echo(format_summary_table(summary))
+
+    # Exit non-zero only if every paper failed. A partial batch is still
+    # useful — the user wants to know what we got, not be blocked by one
+    # bad PDF in a corpus of hundreds.
+    if summary.completed == 0 and summary.failed > 0:
+        sys.exit(2)
+
+
+@main.command()
 def info():
     """Show available engines and providers."""
     from pdf2md.extractors import get_available_extractors

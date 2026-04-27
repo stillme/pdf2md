@@ -1,8 +1,11 @@
 """Tests for the CLI."""
 
+from unittest.mock import patch
+
 import pytest
 from click.testing import CliRunner
 from pdf2md.cli import main
+from pdf2md.document import Document, Metadata
 
 
 @pytest.fixture
@@ -64,3 +67,48 @@ def test_version(runner):
     result = runner.invoke(main, ["--version"])
     assert result.exit_code == 0
     assert "0.1.0" in result.output
+
+
+def test_batch_help(runner):
+    result = runner.invoke(main, ["batch", "--help"])
+    assert result.exit_code == 0
+    assert "--output-dir" in result.output
+    assert "--concurrency" in result.output
+    assert "--checkpoint" in result.output
+    assert "--no-resume" in result.output
+
+
+def test_batch_smoke(runner, tmp_path):
+    # Create two minimal "pdfs" — convert is mocked, contents don't matter.
+    in_dir = tmp_path / "in"
+    in_dir.mkdir()
+    for name in ["one.pdf", "two.pdf"]:
+        (in_dir / name).write_bytes(b"%PDF-1.4\n%fake")
+    out_dir = tmp_path / "out"
+
+    fake_doc = Document(markdown="# Mock", metadata=Metadata(pages=1))
+
+    with patch("pdf2md.core.convert", return_value=fake_doc) as mock_convert:
+        result = runner.invoke(
+            main,
+            ["batch", str(in_dir), "--output-dir", str(out_dir), "--tier", "fast"],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert mock_convert.call_count == 2
+    assert "Batch Summary" in result.output
+    assert "Completed: 2" in result.output
+    assert (out_dir / "one.md").exists()
+    assert (out_dir / "two.md").exists()
+    assert (out_dir / ".pdf2md-batch.json").exists()
+
+
+def test_batch_no_pdfs_found(runner, tmp_path):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    out = tmp_path / "out"
+    result = runner.invoke(
+        main, ["batch", str(empty), "--output-dir", str(out)],
+    )
+    assert result.exit_code != 0
+    assert "No PDFs found" in result.output
