@@ -100,3 +100,48 @@ def test_select_engine_native_text_with_vlm():
         vlm_available=True,
     )
     assert "vlm" not in engines
+
+
+# --- Synthetic scanned-PDF detection ---------------------------------
+#
+# Regression tests for the ``is_scanned`` detection path. The triage
+# layer used to call ``pdfium.FPDF_PAGEOBJ_IMAGE`` (which doesn't exist
+# at the package root in current pypdfium2) inside a broad ``except
+# Exception`` block, so ``has_images`` was always False and therefore
+# ``is_scanned`` was always False. Routing for scanned pages went to
+# pdfplumber, which produced empty markdown. These tests guard against
+# that regression by feeding the analyzer a synthetic image-only PDF.
+
+
+def test_analyze_page_detects_scanned(scanned_pdf_bytes):
+    """Image-only page should be flagged as scanned with no text layer."""
+    analysis = analyze_page(scanned_pdf_bytes, page_number=0)
+    assert analysis.has_text_layer is False
+    assert analysis.has_images is True, (
+        "image detection regressed — analyzer missed the page raster. "
+        "Check pypdfium2 constant import and get_objects(max_depth=...)."
+    )
+    assert analysis.is_scanned is True
+    # Coverage is 0 because there's no embedded text at all.
+    assert analysis.text_coverage == 0.0
+
+
+def test_select_tier_auto_routes_scanned_to_standard(scanned_pdf_bytes):
+    """Auto tier should bump scanned pages up to STANDARD so VLM can fire."""
+    analysis = analyze_page(scanned_pdf_bytes, page_number=0)
+    tier = select_tier(analysis, requested=Tier.AUTO)
+    assert tier == Tier.STANDARD
+
+
+def test_select_engine_routes_scanned_pdf_to_vlm(scanned_pdf_bytes):
+    """End-to-end triage: scanned PDF + VLM available -> vlm engine first."""
+    analysis = analyze_page(scanned_pdf_bytes, page_number=0)
+    engines = select_engine(
+        Tier.STANDARD,
+        has_text_layer=analysis.has_text_layer,
+        available_engines=["pypdfium2", "pdfplumber"],
+        has_tables=analysis.has_tables,
+        is_scanned=analysis.is_scanned,
+        vlm_available=True,
+    )
+    assert engines[0] == "vlm"

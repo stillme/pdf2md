@@ -35,10 +35,24 @@ def analyze_page(pdf_bytes: bytes, page_number: int) -> PageAnalysis:
     expected_chars = page_area * 0.0006  # calibrated for typical text density
     text_coverage = min(len(text) / max(expected_chars, 1), 1.0)
 
+    # Image detection. Two historical bugs to avoid here:
+    #   1. ``pdfium.FPDF_PAGEOBJ_IMAGE`` is not exposed at the package
+    #      root in current pypdfium2; the constant lives in
+    #      ``pypdfium2.raw``. The previous code raised AttributeError
+    #      which the broad ``except`` silently swallowed, so
+    #      ``has_images`` was always False — which in turn meant
+    #      ``is_scanned`` (defined as ``not has_text and has_images``)
+    #      was always False. Scanned pages would silently route to
+    #      pdfplumber/pypdfium and produce empty markdown.
+    #   2. ``page.get_objects()`` defaults to ``max_depth=2`` which
+    #      does not recurse into Form XObjects. Reportlab and many
+    #      real-world scanners wrap the page raster in a Form XObject,
+    #      so the shallow walk missed it.
+    from pypdfium2 import raw as _pdfium_raw
     has_images = False
     try:
-        for obj in page.get_objects():
-            if obj.type == pdfium.FPDF_PAGEOBJ_IMAGE:
+        for obj in page.get_objects(max_depth=10):
+            if obj.type == _pdfium_raw.FPDF_PAGEOBJ_IMAGE:
                 has_images = True
                 break
     except Exception:
