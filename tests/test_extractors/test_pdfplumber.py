@@ -147,8 +147,9 @@ def test_table_confidence_numeric_header():
 def test_pdfplumber_uses_layout_mode(sample_pdf_bytes):
     """The extractor must call extract_text(layout=True).
 
-    Without layout=True pdfplumber ignores column boundaries, which
-    interleaves columns on multi-column scientific papers.
+    Without layout=True pdfplumber ignores in-column line order. The
+    column-aware path crops per-column and then calls extract_text with
+    layout=True on each crop, so the spy still observes layout=True.
     """
     ext = PdfplumberExtractor()
     captured: dict = {}
@@ -166,28 +167,71 @@ def test_pdfplumber_uses_layout_mode(sample_pdf_bytes):
     assert captured.get("kwargs", {}).get("layout") is True
 
 
-def test_pdfplumber_layout_preserves_two_column_reading_order():
-    """On a 2-col page with uneven column heights the left column text
-    must come before the right column text (top-to-bottom of col 1,
-    then col 2)."""
+def test_pdfplumber_two_column_separates_columns_completely():
+    """Column-aware extraction returns the entire left column before any
+    right-column text — not the row-by-row interleave that plain
+    layout=True produces. Without this, ``faecal micro-`` from the end
+    of column 1 lands on the same physical line as ``biota transplant``
+    from the start of column 2 and the cleaner can't recover."""
     pdf_bytes = _make_two_column_pdf()
     ext = PdfplumberExtractor()
     page = ext.extract_page(pdf_bytes, 0)
     text = page.text
+
     # All left-col tokens present.
     assert "LEFT-00" in text and "LEFT-19" in text
     # All right-col tokens present.
     assert "RIGHT-00" in text and "RIGHT-07" in text
-    # Layout-mode pdfplumber emits row-by-row spatial output: on rows where
-    # both columns have text the LEFT cell precedes the RIGHT cell on the
-    # same line, and rows where only LEFT exists never have a RIGHT marker
-    # spliced into them. Verify the bottom rows (LEFT-only) do not contain
-    # any RIGHT markers between LEFT-08 and LEFT-19.
-    tail = text[text.find("LEFT-08"):]
-    assert "RIGHT-" not in tail, (
-        "Column reading-order broken: right-col markers leaked into "
-        "left-only bottom rows"
+
+    # Strong invariant: every LEFT marker appears before every RIGHT
+    # marker. This is what fails on Nature-style two-column papers
+    # under plain layout=True.
+    last_left = max(
+        text.find(f"LEFT-{i:02d}") for i in range(20)
+        if text.find(f"LEFT-{i:02d}") >= 0
     )
+    first_right = min(
+        text.find(f"RIGHT-{i:02d}") for i in range(8)
+        if text.find(f"RIGHT-{i:02d}") >= 0
+    )
+    assert last_left < first_right, (
+        f"Column order broken: last LEFT at {last_left}, "
+        f"first RIGHT at {first_right} — RIGHT must come after all LEFT"
+    )
+
+    # Within each column, markers appear in numerical order.
+    left_positions = [text.find(f"LEFT-{i:02d}") for i in range(20)]
+    assert left_positions == sorted(left_positions)
+    right_positions = [text.find(f"RIGHT-{i:02d}") for i in range(8)]
+    assert right_positions == sorted(right_positions)
+
+
+def test_pdfplumber_single_column_unchanged():
+    """Single-column pages must still extract cleanly — the column
+    detector should not invent boundaries on a normal narrative page."""
+    from io import BytesIO
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import SimpleDocTemplate, Paragraph
+    from reportlab.lib.styles import getSampleStyleSheet
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=letter)
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph(
+            "This is a single column document with sufficient prose "
+            "to exercise the detector. " * 10,
+            styles["Normal"],
+        ),
+    ]
+    doc.build(story)
+
+    ext = PdfplumberExtractor()
+    page = ext.extract_page(buf.getvalue(), 0)
+    assert "single column document" in page.text
+    # The whole paragraph should appear as one block — no column-break
+    # artefact should bisect the prose.
+    assert page.text.count("single column document") >= 5
 
 
 def test_normalize_layout_whitespace_collapses_padding():
