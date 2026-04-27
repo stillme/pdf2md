@@ -235,7 +235,7 @@ def run_batch(
     return summary
 
 
-def format_summary_table(summary: BatchSummary) -> str:
+def format_summary_table(summary: BatchSummary, *, flagged: int | None = None) -> str:
     lines = [
         "", "=" * 60, "Batch Summary", "=" * 60,
         f"Total:     {summary.total}",
@@ -244,6 +244,8 @@ def format_summary_table(summary: BatchSummary) -> str:
         f"Skipped:   {summary.skipped}",
         f"Duration:  {summary.total_duration_s:.1f}s",
     ]
+    if flagged is not None:
+        lines.append(f"Flagged:   {flagged}  (see report.md for details)")
     if summary.failed:
         lines.append("")
         lines.append("Failures:")

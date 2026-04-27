@@ -218,7 +218,13 @@ def batch(
         on_progress=stderr_progress_printer(),
     )
 
-    click.echo(format_summary_table(summary))
+    # Quality report — write report.md / report.json next to outputs.
+    # At corpus scale users can't read every output; the report turns
+    # 1000 markdown files into a one-page anomaly inbox.
+    from pdf2md.quality_report import write_quality_report
+    report = write_quality_report(summary, out_dir)
+
+    click.echo(format_summary_table(summary, flagged=report.flagged))
 
     # Exit non-zero only if every paper failed. A partial batch is still
     # useful — the user wants to know what we got, not be blocked by one
