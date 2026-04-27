@@ -164,12 +164,19 @@ def match_captions_to_figures(
 
 
 def sync_caption_alt_text(markdown: str, figures: list[Figure], captions: list[dict]) -> str:
-    """Update figure image alt text with matched figure caption labels."""
+    """Update figure image alt text with matched figure caption labels.
+
+    Uses a callable replacement so backslash-letter sequences inside the alt
+    text (``\\B``, ``\\d``, etc. — common in math captions) are not
+    interpreted as regex backreferences. Without this, a caption containing
+    e.g. ``\\B`` raised ``re.PatternError: bad escape`` and aborted the run.
+    """
     for fig, cap in _caption_figure_pairs(figures, captions, only_uncaptioned=False):
         alt_text = _caption_alt_text(cap)
+        replacement = f"![{alt_text}]({fig.id})"
         markdown = re.sub(
             rf"!\[[^\]]*\]\({re.escape(fig.id)}\)",
-            f"![{alt_text}]({fig.id})",
+            lambda _m, repl=replacement: repl,
             markdown,
             count=1,
         )

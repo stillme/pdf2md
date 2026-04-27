@@ -206,8 +206,13 @@ def convert(
 
         all_pages.append(page_content)
 
-    # Extract bold headings and enhanced figures if PyMuPDF is available
+    # Extract bold headings and enhanced figures if PyMuPDF is available.
+    # Without pymupdf, figure extraction degrades to whatever the primary
+    # extractor produces (often nothing on Nature-style PDFs). We surface
+    # this loudly because the silent failure mode used to drop scored
+    # quality from ~95% to ~65% with no indication that anything was wrong.
     bold_headings: list[dict] | None = None
+    pymupdf_warning: str | None = None
     try:
         from pdf2md.extractors.pymupdf_ext import PymupdfExtractor
         pymupdf_ext = PymupdfExtractor()
@@ -237,10 +242,22 @@ def convert(
                     update={"figures": figs}
                 )
     except ImportError:
-        pass
+        pymupdf_warning = (
+            "pymupdf not installed: bold-heading detection and enhanced "
+            "figure extraction are disabled. Install with "
+            "`uv sync --extra pymupdf` (or `pip install pymupdf`)."
+        )
+        logger.warning(pymupdf_warning)
 
     # Assemble into Document
     doc = assemble_markdown(all_pages, bold_headings=bold_headings)
+
+    # Surface the missing-pymupdf message into the document so callers see
+    # it even if they aren't capturing the logger.
+    if pymupdf_warning is not None:
+        doc = doc.model_copy(update={
+            "warnings": [*doc.warnings, pymupdf_warning],
+        })
 
     # Enhance metadata: extract title, authors, DOI from assembled text
     full_text = "\n".join(p.text for p in all_pages)
@@ -366,12 +383,21 @@ def convert(
                             f"{summary.skipped_ambiguous} ambiguous"
                         )
 
+                def _record_error(explanation, _page_num=page_num):
+                    # One line per failed page. The explanation already
+                    # carries the provider's HTTP status / model id so a
+                    # reader can spot a deprecated-model 404 immediately.
+                    verify_warnings.append(
+                        f"verify page {_page_num}: {explanation}"
+                    )
+
                 corrected_md, confidence = run_verify_loop(
                     page_image,
                     page.text,
                     vlm_verify,
                     max_rounds=config.max_verify_rounds,
                     on_patch_summary=_record,
+                    on_error=_record_error,
                 )
                 corrected_pages[i] = page.model_copy(update={
                     "text": corrected_md,

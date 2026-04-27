@@ -251,6 +251,7 @@ def run_verify_loop(
     provider: VLMProvider,
     max_rounds: int = 2,
     on_patch_summary: Callable[[ApplyCorrectionsResult], None] | None = None,
+    on_error: Callable[[str], None] | None = None,
 ) -> tuple[str, float]:
     """Run the agentic verify-correct loop.
 
@@ -259,7 +260,10 @@ def run_verify_loop(
 
     If the verifier returns ``status == "error"`` (a provider failure),
     the loop terminates immediately without applying corrections and
-    returns the original markdown with confidence ``0.0``.
+    returns the original markdown with confidence ``0.0``. The error
+    explanation is forwarded through ``on_error`` so callers can surface
+    the failure into ``Document.warnings`` instead of having every page
+    silently degrade to the unverified text.
 
     Args:
         page_image: PNG bytes of the rendered page.
@@ -271,6 +275,9 @@ def run_verify_loop(
             :class:`ApplyCorrectionsResult` for that round. Useful for
             surfacing skipped-correction counts into ``Document.warnings``
             without changing the return type.
+        on_error: Optional callback invoked exactly once when the verifier
+            terminates because the provider raised. Receives the explanation
+            string from :class:`VerifyResult`.
 
     Returns:
         Tuple of ``(best_markdown, confidence)``. Patch outcomes are reported
@@ -286,6 +293,11 @@ def run_verify_loop(
 
         # Provider error: do not apply corrections, terminate immediately
         if result.status == "error":
+            if on_error is not None:
+                try:
+                    on_error(result.explanation or "verifier provider error")
+                except Exception:
+                    logger.exception("on_error callback failed")
             return extracted_markdown, 0.0
 
         # Track the best result

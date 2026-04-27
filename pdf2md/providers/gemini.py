@@ -11,7 +11,9 @@ from pdf2md.providers._ratelimit import RateLimiter, is_429
 class GeminiProvider:
     """Google Gemini provider using the generativelanguage REST API."""
 
-    _DEFAULT_MODEL = "gemini-2.0-flash"
+    # gemini-2.0-flash returns 404 from the v1beta endpoint as of Apr 2026.
+    # gemini-2.5-flash is the current GA fast multimodal model.
+    _DEFAULT_MODEL = "gemini-2.5-flash"
     _BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
     def __init__(self, model: str | None = None) -> None:
