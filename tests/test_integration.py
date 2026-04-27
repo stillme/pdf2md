@@ -63,3 +63,48 @@ def test_metadata_extraction(sample_pdf_bytes):
     doc = convert(sample_pdf_bytes, tier="fast")
     assert doc.metadata.title is not None
     assert "Sample" in doc.metadata.title or "Research" in doc.metadata.title
+
+
+def test_scanned_pdf_routes_to_vlm(scanned_pdf_bytes):
+    """End-to-end: scanned PDF + standard tier should fire the VLM extractor.
+
+    Verifies the full triage -> route -> extract chain on a synthetic
+    image-only PDF. The VLM provider is mocked so this test never spends
+    subscription / API quota — but it does assert the provider is called
+    with a PNG image payload, which is the contract the real
+    ``VLMExtractor`` relies on.
+    """
+    from unittest.mock import MagicMock, patch
+
+    canned_markdown = (
+        "# SCANNED SAMPLE DOCUMENT\n\n"
+        "## Abstract\n\n"
+        "This page exists only as a raster image. There is no embedded "
+        "text layer.\n"
+    )
+
+    mock_provider = MagicMock()
+    mock_provider.name = "claude-cli"
+    mock_provider.complete_sync.return_value = canned_markdown
+
+    with patch("pdf2md.core._get_vlm_provider", return_value=mock_provider):
+        doc = convert(scanned_pdf_bytes, tier="standard", provider="claude-cli")
+
+    # The VLM extractor must have actually fired (not just been routed).
+    assert mock_provider.complete_sync.called, (
+        "VLM extractor was not invoked — routing or extraction broke."
+    )
+    # First call should have an ``image=`` kwarg with PNG bytes from the
+    # rendered scanned page.
+    call_kwargs = mock_provider.complete_sync.call_args_list[0].kwargs
+    assert "image" in call_kwargs and isinstance(call_kwargs["image"], bytes)
+    assert call_kwargs["image"].startswith(b"\x89PNG"), (
+        "VLM was not handed a PNG render of the scanned page."
+    )
+
+    # The assembled document should reflect the canned VLM output.
+    assert doc.engine_used == "vlm", (
+        f"Expected engine_used='vlm', got {doc.engine_used!r}. Routing "
+        "may have fallen back to a text extractor."
+    )
+    assert "SCANNED SAMPLE DOCUMENT" in doc.markdown
