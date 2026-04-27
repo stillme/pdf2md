@@ -118,6 +118,7 @@ def convert(
     figures: str | None = None,
     verify: bool = True,
     provider: str | None = None,
+    equations: bool = True,
 ) -> Document:
     """Convert a PDF to a structured markdown Document.
 
@@ -127,6 +128,11 @@ def convert(
         figures: Figure handling mode (skip, caption, describe, extract).
         verify: Whether to run verification passes.
         provider: VLM provider override.
+        equations: Run VLM equation extraction on math-heavy pages.
+            Default ``True`` for backward compatibility. Set to ``False``
+            for batch jobs on text-heavy corpora (biomedical, social
+            sciences) where the math heuristic fires on incidental Greek
+            letters and burns subscription quota for no real gain.
 
     Returns:
         A Document with markdown, sections, tables, figures, and metadata.
@@ -148,6 +154,7 @@ def convert(
         tier=tier,
         verify=verify,
         provider=provider,
+        equations=equations,
     )
     if figures is not None:
         config = config.model_copy(update={"figures": figures})
@@ -335,27 +342,32 @@ def convert(
             if enhanced_tables:
                 doc = doc.model_copy(update={"tables": enhanced_tables})
 
-            # VLM equation extraction on math-heavy pages
+            # VLM equation extraction on math-heavy pages. The math
+            # heuristic fires on any page with a few Greek letters or
+            # ``=`` characters, so on text-heavy corpora it can spawn
+            # one VLM call per page for no real gain. Disable via
+            # ``equations=False`` for batch jobs that don't need LaTeX.
             all_equations = list(doc.equations)
-            for page_idx_eq in range(num_pages):
-                page_text = all_pages[page_idx_eq].text
-                if not detect_math_regions(page_text):
-                    continue
-                page_image = _render_page_image(pdf_bytes, page_idx_eq)
-                if page_image is None:
-                    continue
-                try:
-                    eqs = extract_equations_vlm(
-                        page_image=page_image,
-                        page_text=page_text,
-                        provider=vlm,
-                        page_number=page_idx_eq,
-                    )
-                    all_equations.extend(eqs)
-                except Exception as exc:
-                    msg = f"equation extraction failed on page {page_idx_eq}: {exc}"
-                    logger.warning(msg)
-                    doc.warnings.append(msg)
+            if config.equations:
+                for page_idx_eq in range(num_pages):
+                    page_text = all_pages[page_idx_eq].text
+                    if not detect_math_regions(page_text):
+                        continue
+                    page_image = _render_page_image(pdf_bytes, page_idx_eq)
+                    if page_image is None:
+                        continue
+                    try:
+                        eqs = extract_equations_vlm(
+                            page_image=page_image,
+                            page_text=page_text,
+                            provider=vlm,
+                            page_number=page_idx_eq,
+                        )
+                        all_equations.extend(eqs)
+                    except Exception as exc:
+                        msg = f"equation extraction failed on page {page_idx_eq}: {exc}"
+                        logger.warning(msg)
+                        doc.warnings.append(msg)
             if all_equations:
                 doc = doc.model_copy(update={"equations": all_equations})
 

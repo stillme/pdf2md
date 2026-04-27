@@ -70,7 +70,10 @@ def detect_providers() -> list[dict]:
         "name": "claude-cli",
         "available": _shutil.which("claude") is not None,
         "env_var": None,
-        "default_model": "sonnet",
+        # Haiku gives 3x more throughput per subscription window for
+        # the dominant batch tasks (figure descriptions, table cleanup).
+        # Override with provider="claude-cli/sonnet" when needed.
+        "default_model": "haiku",
     })
     ollama_available = False
     try:

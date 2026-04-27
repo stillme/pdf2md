@@ -150,3 +150,56 @@ def test_convert_surfaces_equation_extraction_failure():
     assert len(doc.warnings) >= 1
     assert any("equation extraction failed on page" in w for w in doc.warnings)
     assert any("VLM API unavailable" in w for w in doc.warnings)
+
+
+def test_convert_equations_false_skips_vlm_equation_calls():
+    """``equations=False`` must short-circuit the per-page math VLM loop.
+    Lean-mode batch jobs on biomedical corpora can't afford a VLM call
+    per page that happens to mention a Greek letter."""
+    from unittest.mock import MagicMock, patch
+    import pdf2md
+
+    pdf_bytes = _generate_math_pdf()
+    mock_provider = MagicMock()
+    mock_provider.name = "test"
+    mock_provider.complete_sync.return_value = ""
+
+    with patch("pdf2md.core._get_vlm_provider", return_value=mock_provider):
+        doc = pdf2md.convert(
+            pdf_bytes, tier="standard", verify=False, equations=False,
+        )
+
+    assert isinstance(doc, Document)
+    # No per-page equation prompts were issued. The figure / table paths
+    # may still call complete_sync; the strict assertion is that no
+    # prompt mentioning equation extraction fired.
+    for call in mock_provider.complete_sync.call_args_list:
+        prompt = call.args[0] if call.args else call.kwargs.get("prompt", "")
+        assert "mathematical equations" not in prompt, (
+            f"equations=False must suppress VLM math calls, got: {prompt[:80]}"
+        )
+    # And no equation-extraction warning surfaced (because none were tried).
+    assert not any("equation extraction failed" in w for w in doc.warnings)
+
+
+def test_convert_equations_true_default_still_runs_math_pipeline():
+    """Backwards-compat check: omitting ``equations`` keeps the old
+    behaviour and the math VLM loop fires on math-heavy pages."""
+    from unittest.mock import MagicMock, patch
+    import pdf2md
+
+    pdf_bytes = _generate_math_pdf()
+    mock_provider = MagicMock()
+    mock_provider.name = "test"
+    mock_provider.complete_sync.return_value = ""
+
+    with patch("pdf2md.core._get_vlm_provider", return_value=mock_provider):
+        pdf2md.convert(pdf_bytes, tier="standard", verify=False)
+
+    saw_math_prompt = any(
+        "mathematical equations" in (
+            (call.args[0] if call.args else call.kwargs.get("prompt", ""))
+        )
+        for call in mock_provider.complete_sync.call_args_list
+    )
+    assert saw_math_prompt, "default equations=True must still issue math prompts"
