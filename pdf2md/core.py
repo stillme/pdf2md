@@ -31,6 +31,7 @@ from pdf2md.enhancers.references import parse_references
 from pdf2md.enhancers.tables import enhance_table
 from pdf2md.enhancers.superscripts import detect_superscripts
 from pdf2md.enhancers.text_cleaner import clean_figure_text
+from pdf2md.enhancers.unicode_normalizer import normalize_unicode_text
 from pdf2md.extractors import get_available_extractors, get_extractor_by_name
 from pdf2md.extractors.base import PageContent, RawFigure
 from pdf2md.providers.base import VLMProvider
@@ -213,6 +214,16 @@ def convert(
                 page_content = _merge_tables(page_content, plumber_page)
 
         all_pages.append(page_content)
+
+    # Normalize Unicode artifacts (soft hyphens, ligatures, stray control
+    # chars) on each page's text before anything downstream consumes it.
+    # Doing this once here means the assembler, metadata extractor, caption
+    # matcher, and bibliography parser all see clean text without each having
+    # to re-normalize.
+    all_pages = [
+        page.model_copy(update={"text": normalize_unicode_text(page.text)})
+        for page in all_pages
+    ]
 
     # Extract bold headings and enhanced figures if PyMuPDF is available.
     # Without pymupdf, figure extraction degrades to whatever the primary
