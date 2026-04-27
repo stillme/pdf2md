@@ -43,6 +43,15 @@ _ANCHOR_PREFIX_RE = re.compile(r'^<a\s+id="ref-\d+"></a>')
 _INLINE_OPENER_RE = re.compile(
     r"\s(?P<num>\d{1,3})\.\s+(?=[A-Z][a-zA-Z'\-]+(?:,\s*[A-Z]\.|\s+et\s+al\.))"
 )
+# Author-year entry opener. Cell-press / many older Elsevier journals use an
+# alphabetical, un-numbered reference list where each entry begins with a
+# capitalised surname followed by a comma and at least one initial+period.
+# We allow tight (``Smith,J.K.,``) and loose (``Smith, J.K.,``) spacing
+# because the text-flattening step routinely loses inter-token whitespace
+# when reflowing two-column journal layouts.
+_AUTHOR_YEAR_OPENER_RE = re.compile(
+    r"^\s*[A-Z][a-zA-Z'À-ſ\-]+,\s*[A-Z]\.(?:[A-Z]\.)?(?:,|\s+(?:and|&))"
+)
 
 # --- Field extractors (reused across styles) -----------------------------
 
@@ -113,29 +122,34 @@ def _extract_references_section(markdown: str) -> str:
 def _detect_implicit_reference_block(lines: list[str]) -> str:
     """Locate a bibliography block when no ``## References`` heading exists.
 
-    Walks the document line-by-line tracking runs of numbered entry openers.
-    When a run reaches :data:`_IMPLICIT_RUN_THRESHOLD` we lock the start of
-    the bibliography to the first opener in that run; the block then extends
-    to end of document. The run itself doesn't need to be contiguous —
-    interleaved continuation lines (long titles, page breaks) and short
-    intervening text fragments are common in real exports.
+    Walks the document line-by-line tracking runs of entry openers (both
+    numbered and author-year style). When a run reaches
+    :data:`_IMPLICIT_RUN_THRESHOLD` we lock the start of the bibliography
+    to the first opener in that run; the block then extends to end of
+    document. The run itself doesn't need to be contiguous — interleaved
+    continuation lines (long titles, page breaks) and short intervening
+    text fragments are common in real exports.
     """
     candidate_start: int | None = None
-    seen_numbers: list[int] = []
+    seen_count = 0
 
     for idx, line in enumerate(lines):
-        if _ENTRY_BRACKET_RE.match(line) or _ENTRY_DOTTED_RE.match(line):
+        if (
+            _ENTRY_BRACKET_RE.match(line)
+            or _ENTRY_DOTTED_RE.match(line)
+            or _AUTHOR_YEAR_OPENER_RE.match(line)
+        ):
             if candidate_start is None:
                 candidate_start = idx
-            seen_numbers.append(idx)
+            seen_count += 1
         # Reset only on hard structural breaks. Short non-matching prose is
-        # common between numbered entries (figure captions, page footers,
-        # multi-line titles), so we tolerate it.
+        # common between entries (figure captions, page footers, multi-line
+        # titles), so we tolerate it.
         elif _ANY_HEADING_RE.match(line):
             candidate_start = None
-            seen_numbers = []
+            seen_count = 0
 
-        if len(seen_numbers) >= _IMPLICIT_RUN_THRESHOLD and candidate_start is not None:
+        if seen_count >= _IMPLICIT_RUN_THRESHOLD and candidate_start is not None:
             return "\n".join(lines[candidate_start:]).strip()
 
     return ""
@@ -160,6 +174,10 @@ def _split_entries(section: str) -> list[tuple[int, str]]:
     left-column entry's continuation with the right-column entry's
     opener onto one physical line. Whatever comes after that opener is
     split off into its own entry.
+
+    When the section has no numbered openers at all, fall back to the
+    author-year splitter (Cell-press, Trends, older Elsevier journals
+    that emit alphabetised, un-numbered reference lists).
     """
     entries: list[tuple[int, list[str]]] = []
     for raw_line in section.split("\n"):
@@ -173,12 +191,46 @@ def _split_entries(section: str) -> list[tuple[int, str]]:
         elif entries and line.strip():
             entries[-1][1].append(line.strip())
 
+    if not entries:
+        return _split_author_year_entries(section)
+
     expanded: list[tuple[int, str]] = []
     for num, parts in entries:
         text = " ".join(parts).strip()
         for split_num, split_text in _split_spliced_entry(num, text):
             expanded.append((split_num, split_text))
     return expanded
+
+
+def _split_author_year_entries(section: str) -> list[tuple[int, str]]:
+    """Split an author-year reference section into ``(seq, raw)`` tuples.
+
+    Author-year reference lists carry no inherent entry number, so we
+    assign sequential ``1..N`` ids to keep downstream anchor wiring stable.
+    The opener regex alone is not enough — long author lists wrap onto a
+    second physical line that also begins with a ``Surname, X.`` token
+    and would erroneously trigger a new entry. We treat the previous
+    entry as still-open until it has captured a ``(YYYY)`` marker, which
+    reliably signals end-of-authors.
+    """
+    entries: list[list[str]] = []
+    for raw_line in section.split("\n"):
+        line = _ANCHOR_PREFIX_RE.sub("", raw_line, count=1).strip()
+        if not line:
+            continue
+        if _AUTHOR_YEAR_OPENER_RE.match(line) and (
+            not entries or _entry_has_year(entries[-1])
+        ):
+            entries.append([line])
+        elif entries:
+            entries[-1].append(line)
+
+    return [(idx + 1, " ".join(parts).strip()) for idx, parts in enumerate(entries)]
+
+
+def _entry_has_year(parts: list[str]) -> bool:
+    """Return True once the buffered entry has captured a ``(YYYY)`` marker."""
+    return bool(_CELL_YEAR_MARKER_RE.search(" ".join(parts)))
 
 
 def _split_spliced_entry(number: int, text: str) -> list[tuple[int, str]]:
@@ -247,18 +299,37 @@ def _dispatch_style(raw: str) -> dict[str, object]:
     """Pick the best style parser for ``raw`` and return its field dict.
 
     Detection cues:
-      * APA: a year in parentheses immediately followed by a period
-        (``(2023).``) is a strong APA signal — the style hangs the title
-        off the year token.
-      * Nature/Cell: a year in parentheses at end-of-entry (``(2023).``
-        as the final clause) with the journal-volume-pages comma form.
+      * Cell author-year: an opener with multiple ``Surname, X.,`` tokens
+        followed somewhere by ``(YYYY).`` mid-entry. Both the squished
+        (``Smith,J.,Jones,K.``) and loose variants are handled together.
+      * APA: a year in parentheses immediately followed by ``. `` and the
+        title — the style hangs the title off the year token with a
+        sentence-style space.
+      * Nature/Cell-numbered: a year in parentheses at end-of-entry
+        (``(2023).`` as the final clause) with the journal-volume-pages
+        comma form.
       * Vancouver/AMA fallback otherwise — periods separate
         authors/title/journal and ``year;vol(issue):pages`` follows.
     """
-    if re.search(r"\(\d{4}[a-z]?\)\.\s+\S", raw):
-        return _parse_apa(raw)
+    # Nature style ends with ``(YYYY).`` — defer to it whenever the year
+    # marker is the final clause, even if the opener also matches the
+    # Cell author-year regex (Nature entries do start with ``Smith, J.``).
     if re.search(r"\(\d{4}[a-z]?\)\s*\.?\s*$", raw):
         return _parse_nature(raw)
+    # Cell-press author-year reference lists routinely lose inter-token
+    # whitespace and use the ``,? and`` connector (or no connector at all)
+    # before the last author, while APA strictly uses ``, &``. Routing
+    # Cell entries here lets us anchor on the ``vol, pages`` regex
+    # rather than relying on APA's ``Title. Journal,`` separator that
+    # the squished output destroys.
+    if (
+        _AUTHOR_YEAR_OPENER_RE.match(raw)
+        and re.search(r"\(\d{4}[a-z]?\)", raw)
+        and not re.search(r",\s*&\s*[A-Z]", raw)
+    ):
+        return _parse_cell_author_year(raw)
+    if re.search(r"\(\d{4}[a-z]?\)\.\s+\S", raw):
+        return _parse_apa(raw)
     return _parse_vancouver(raw)
 
 
@@ -389,6 +460,122 @@ def _split_authors_nature(block: str) -> list[str]:
 
 def _clean_author(text: str) -> str:
     return text.strip().strip(".,;")
+
+
+# --- Style: Cell author-year --------------------------------------------
+#
+# Example (loose):
+#   "Smith, J., Jones, K., and Lee, S. (2023). Title of paper. Journal 45,
+#   100-110."
+#
+# Example (squished — common after column-aware reflow):
+#   "Smith,J.,Jones,K.,andLee,S.(2023).Titleofpaper.Journal45,100-110."
+#
+# Cell-press, Trends, and many older Elsevier journals use this style with
+# an alphabetised, un-numbered reference list. The reflow step regularly
+# loses inter-token whitespace; we anchor on the ``(YYYY)`` marker rather
+# than relying on consistent spacing.
+
+
+# Squished or loose Cell author token: ``Surname,X.[Y.]``. The tail token
+# matcher allows zero, one, or two initial periods so multi-initial authors
+# like ``Smith, J.K.`` round-trip.
+_CELL_AUTHOR_TOKEN = (
+    r"[A-Z][a-zA-Z'À-ſ\-]+,\s*[A-Z]\.(?:\s*-?\s*[A-Z]\.)*"
+)
+_CELL_AUTHOR_TOKEN_RE = re.compile(_CELL_AUTHOR_TOKEN)
+_CELL_YEAR_MARKER_RE = re.compile(r"\((\d{4}[a-z]?)\)\.?\s*")
+
+
+def _parse_cell_author_year(raw: str) -> dict[str, object]:
+    """Parse a Cell-style ``Authors. (YYYY). Title. Journal vol, pages.`` entry.
+
+    Anchors on the year-in-parens marker because Cell exports lose
+    inter-token whitespace inconsistently and the period that normally
+    separates title and journal is unreliable. The volume/pages tail is
+    distinctive and gives us the right edge of the title.
+    """
+    year_match = _CELL_YEAR_MARKER_RE.search(raw)
+    if not year_match:
+        return {}
+
+    # Trim only whitespace and trailing commas — never the period, since
+    # the last author's initial ends with one (``..., Decaluwe, H.``)
+    # and rstrip-ing periods would shear the final initial off.
+    authors_chunk = raw[: year_match.start()].rstrip(" ,")
+    tail = raw[year_match.end():].lstrip(" .")
+
+    authors = _split_authors_cell(authors_chunk)
+
+    # ``tail`` is ``Title.Journal vol, pages.`` (squished) or
+    # ``Title. Journal vol, pages.`` (loose). Anchor on the volume/pages
+    # tail; whatever sits in front is title + journal.
+    vp_match = _VOLUME_PAGES_RE.search(tail)
+    title = ""
+    journal: str | None = None
+    volume: str | None = None
+    pages: str | None = None
+
+    if vp_match:
+        head = tail[: vp_match.start()].rstrip(", .")
+        # Journal name precedes the volume number with a single space —
+        # find the LAST whitespace before the volume so multi-word journal
+        # abbreviations like ``Nat. Protoc.`` stay intact.
+        space_at = head.rfind(" ")
+        if space_at >= 0:
+            journal_candidate = head[space_at + 1:].strip(", .")
+            title_head = head[:space_at].rstrip(", .")
+            # Split title from journal: title ends with the LAST ``. ``
+            # before the journal token, but in squished output the period
+            # may have no trailing space. Try both forms.
+            split_at = title_head.rfind(". ")
+            if split_at < 0:
+                # Squished form: walk back to find ``.<UpperCase>`` boundary
+                # adjacent to the journal candidate.
+                squished_split = re.search(r"\.(?=[A-Z][a-zA-Z]*\.?$)", title_head)
+                split_at = squished_split.start() if squished_split else -1
+                offset = 1
+            else:
+                offset = 2
+            if split_at >= 0:
+                title = title_head[:split_at].strip()
+                inline_journal = title_head[split_at + offset:].strip(", .")
+                journal = (
+                    f"{inline_journal} {journal_candidate}".strip(", .")
+                    if inline_journal
+                    else journal_candidate
+                )
+            else:
+                title = title_head.strip()
+                journal = journal_candidate
+        else:
+            title = head.strip()
+        volume = vp_match.group("vol")
+        pages = vp_match.group("pages")
+    else:
+        # No volume/pages tail — keep everything after the year as the title.
+        title = tail.rstrip(". ")
+
+    return {
+        "authors": authors,
+        "title": title,
+        "journal": journal,
+        "volume": volume,
+        "pages": pages,
+    }
+
+
+def _split_authors_cell(chunk: str) -> list[str]:
+    """Pull individual ``Surname, X.`` tokens out of a Cell author block.
+
+    Both squished (``Smith,J.,Jones,K.``) and loose (``Smith, J., Jones, K.``)
+    variants surface; the token regex tolerates either form. Trailing
+    ``etal``/``et al.`` markers are dropped.
+    """
+    return [
+        re.sub(r",\s*", ", ", m.group(0)).strip(" ,;")
+        for m in _CELL_AUTHOR_TOKEN_RE.finditer(chunk)
+    ]
 
 
 # --- Style: APA ----------------------------------------------------------
