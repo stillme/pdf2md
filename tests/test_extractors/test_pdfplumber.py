@@ -6,7 +6,9 @@ from unittest.mock import patch
 import pytest
 from pdf2md.extractors.pdfplumber_ext import (
     PdfplumberExtractor,
+    _is_degenerate_table,
     _normalize_layout_whitespace,
+    _sanitize_cell,
     _table_confidence,
 )
 
@@ -253,3 +255,206 @@ def test_normalize_layout_whitespace_keeps_short_runs():
     raw = "End of sentence.  Next sentence starts."
     out = _normalize_layout_whitespace(raw)
     assert out == raw
+
+
+# --- Phase 2 fixes: degenerate-table filter and cell sanitization -------
+
+def test_is_degenerate_table_all_empty():
+    """All-empty grids (pdfplumber's bordered-figure false positives)
+    must be flagged as degenerate. On the Nature gut paper this filters
+    out 7 spurious 'tables' that were figure panels with detected
+    border lines."""
+    assert _is_degenerate_table(["", "", ""], [["", "", ""], ["", "", ""]])
+    assert _is_degenerate_table([""], [[""]])
+
+
+def test_is_degenerate_table_single_fragment():
+    """A 1-column 'table' with only one non-empty cell is just an
+    enclosed text fragment, not a real table."""
+    assert _is_degenerate_table([""], [["only data"]])
+    assert _is_degenerate_table(["only header"], [[""]])
+
+
+def test_is_degenerate_table_keeps_real_tables():
+    """A real table — multiple columns and multiple non-empty cells —
+    must NOT be flagged as degenerate."""
+    headers = ["Gene", "Fold change", "p-value"]
+    rows = [["TP53", "2.1", "0.001"], ["BRCA1", "1.7", "0.01"]]
+    assert not _is_degenerate_table(headers, rows)
+
+
+def test_is_degenerate_table_keeps_sparse_real_table():
+    """A multi-column table with a few non-empty cells (e.g. STAR
+    Methods reagent list with sparse columns) must be kept — VLM can
+    still recover structure from it."""
+    headers = ["Reagent", "Source", "Identifier"]
+    rows = [
+        ["FITC anti-CD8", "BD Biosciences", "Cat#553031"],
+        ["", "", ""],  # one empty padding row
+    ]
+    assert not _is_degenerate_table(headers, rows)
+
+
+def test_sanitize_cell_collapses_newlines():
+    """Multi-line cells (common in Cancer Cell tables) must collapse
+    to a single line — a literal newline inside a markdown ``|`` cell
+    breaks the row and corrupts every cell after it."""
+    out = _sanitize_cell("Novartis\nPharmaceuticals")
+    assert out == "Novartis Pharmaceuticals"
+    assert "\n" not in out
+
+
+def test_sanitize_cell_collapses_all_whitespace_runs():
+    """Runs of internal whitespace (tabs, multiple spaces) collapse
+    to one space; leading/trailing whitespace is stripped."""
+    assert _sanitize_cell("  a   b\t\tc \n d  ") == "a b c d"
+
+
+def test_sanitize_cell_escapes_pipes():
+    """A literal ``|`` inside cell text would terminate the markdown
+    cell early; escape it so the row stays intact."""
+    out = _sanitize_cell("0.5 | 0.7")
+    assert "\\|" in out
+    assert out == "0.5 \\| 0.7"
+
+
+def test_sanitize_cell_handles_empty():
+    assert _sanitize_cell("") == ""
+    assert _sanitize_cell("   ") == ""
+
+
+def _make_multiline_cell_table_pdf() -> bytes:
+    """Build a 3-col bordered table where some cells contain
+    multi-line text — emulates the Cancer Cell paper, where pdfplumber
+    returns cells like ``Novartis\\nPharmaceuticals``.
+
+    The synthetic PDF draws table grid lines and writes one cell with
+    text spanning two physical lines; a correct extractor must then
+    flatten the two lines into one markdown cell."""
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import letter
+
+    buf = BytesIO()
+    c = canvas.Canvas(buf, pagesize=letter)
+    page_w, page_h = letter
+
+    # 3 columns x 3 rows (header + 2 data rows). Each cell is 120pt wide
+    # x 40pt tall. The middle column on the second data row holds a
+    # two-line value to exercise the newline-in-cell case.
+    col_w = 120.0
+    row_h = 40.0
+    x0 = 60.0
+    y_top = page_h - 120.0
+    n_cols, n_rows = 3, 3
+
+    # Draw grid (so pdfplumber detects this as a table).
+    for r in range(n_rows + 1):
+        y = y_top - r * row_h
+        c.line(x0, y, x0 + n_cols * col_w, y)
+    for col in range(n_cols + 1):
+        x = x0 + col * col_w
+        c.line(x, y_top, x, y_top - n_rows * row_h)
+
+    # Headers row
+    headers = ["Gene", "Source", "Notes"]
+    for col, h in enumerate(headers):
+        c.drawString(x0 + col * col_w + 5, y_top - 25, h)
+
+    # Data row 1: single-line cells
+    row1 = ["TP53", "Sanger", "ok"]
+    for col, v in enumerate(row1):
+        c.drawString(x0 + col * col_w + 5, y_top - 65, v)
+
+    # Data row 2: middle cell is split across two physical lines
+    # within the same bordered cell — pdfplumber will return this as
+    # ``Novartis\nPharmaceuticals`` style.
+    c.drawString(x0 + 0 * col_w + 5, y_top - 105, "BRCA1")
+    c.drawString(x0 + 1 * col_w + 5, y_top - 95, "Novartis")
+    c.drawString(x0 + 1 * col_w + 5, y_top - 115, "Pharmaceuticals")
+    c.drawString(x0 + 2 * col_w + 5, y_top - 105, "yes")
+
+    c.save()
+    return buf.getvalue()
+
+
+def test_extractor_drops_degenerate_tables():
+    """End-to-end: a synthetic PDF that has an empty bordered region
+    (e.g. a figure panel with detected lines) must not yield a table
+    in the output. Without this filter, low-confidence empty tables
+    slip into ``doc.tables`` and trigger one wasted VLM call each."""
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import letter
+
+    buf = BytesIO()
+    c = canvas.Canvas(buf, pagesize=letter)
+    page_w, page_h = letter
+
+    # Draw an empty bordered 2x2 grid — no text inside. pdfplumber's
+    # default settings detect this as a table because of the lines.
+    col_w = 120.0
+    row_h = 40.0
+    x0, y_top = 80.0, page_h - 200.0
+    for r in range(3):
+        c.line(x0, y_top - r * row_h, x0 + 2 * col_w, y_top - r * row_h)
+    for col in range(3):
+        c.line(x0 + col * col_w, y_top, x0 + col * col_w, y_top - 2 * row_h)
+    c.drawString(72, 72, "body text outside the empty grid")
+    c.save()
+
+    ext = PdfplumberExtractor()
+    page = ext.extract_page(buf.getvalue(), 0)
+    # All extracted tables (if any) must have at least one non-empty
+    # cell — i.e. the empty grid must have been filtered out.
+    for t in page.tables:
+        all_cells = list(t.headers) + [c for row in t.rows for c in row]
+        assert any(cell.strip() for cell in all_cells), (
+            "Empty grid leaked through degenerate-table filter"
+        )
+
+
+def test_extractor_flattens_multiline_cells():
+    """End-to-end: a multi-line cell ``Novartis\\nPharmaceuticals`` must
+    appear in the markdown as a single line. Otherwise the row is
+    broken across two physical lines and downstream markdown parsers
+    see a corrupted table."""
+    pdf_bytes = _make_multiline_cell_table_pdf()
+    ext = PdfplumberExtractor()
+    page = ext.extract_page(pdf_bytes, 0)
+    assert page.tables, "expected at least one table from synthetic PDF"
+    table = page.tables[0]
+
+    # The multi-line value must appear as a single space-joined cell
+    # both on the Table object and in the rendered markdown.
+    flat_cells = list(table.headers) + [c for row in table.rows for c in row]
+    multiline_cell = next(
+        (c for c in flat_cells if "Novartis" in c and "Pharmaceuticals" in c),
+        None,
+    )
+    assert multiline_cell is not None, (
+        f"Expected a Novartis/Pharmaceuticals cell, got: {flat_cells}"
+    )
+    assert "\n" not in multiline_cell, (
+        f"Cell must be flattened — got: {multiline_cell!r}"
+    )
+    assert "Novartis Pharmaceuticals" in multiline_cell
+
+    # The rendered markdown row must be on a single physical line.
+    md_lines = table.markdown.splitlines()
+    container = [ln for ln in md_lines
+                 if "Novartis" in ln and "Pharmaceuticals" in ln]
+    assert container, (
+        "Novartis and Pharmaceuticals were split across markdown lines — "
+        f"markdown was:\n{table.markdown}"
+    )
+
+
+def test_table_confidence_all_empty_bottoms_out():
+    """A near-100%-empty grid must score below the VLM enhancer
+    threshold's 'maybe re-process' band — it should bottom out so the
+    confidence signal correctly reflects that there is nothing to
+    correct. Defensive layer below ``_is_degenerate_table``."""
+    headers = ["", "", "", ""]
+    rows = [["", "", "", ""]] * 4
+    # Fully empty: ``_is_degenerate_table`` would catch it, but if it
+    # ever leaked through, confidence must be ~0, not ~0.5.
+    assert _table_confidence(headers, rows) <= 0.1
