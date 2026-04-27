@@ -31,6 +31,16 @@ _LICENSE_WORDS = re.compile(
     re.IGNORECASE,
 )
 
+# Pre-print / publisher self-citation footers. ``Please cite this
+# article in press as: ...`` shows up as a long line near the top of
+# Cell-press papers and bait-and-switches our title detector — the
+# real title sits one block down.
+_CITATION_FOOTER_RE = re.compile(
+    r"\b(please\s+cite\s+this\s+article|in\s+press\s+as|preprint\s+(?:server|version)|"
+    r"corresponding\s+author|to\s+appear\s+in)\b",
+    re.IGNORECASE,
+)
+
 # Words that indicate an institutional affiliation line — not a title
 _AFFILIATION_WORDS = re.compile(
     r"\b(university|department|dept\.?|institute|institution|hospital|school\s+of|"
@@ -45,9 +55,21 @@ _URL_OR_DOI = re.compile(
 )
 
 
+# Affiliation marker: trailing superscript digits/letters, often comma-
+# separated (``Mayassi1,2,9``, ``Wang*†``). Stripping these lets us
+# recognise an author line that the publisher decorated with footnote
+# refs.
+_AFFILIATION_MARKER_RE = re.compile(r"[\d\*†‡§¶★]+(?:,[\d\*†‡§¶★]+)*$")
+
+
+def _strip_affiliation_markers(name: str) -> str:
+    """Drop trailing footnote/affiliation markers from a name token."""
+    return _AFFILIATION_MARKER_RE.sub("", name).strip()
+
+
 def _looks_like_name(token: str) -> bool:
     """Return True if `token` looks like a person's name."""
-    token = token.strip()
+    token = _strip_affiliation_markers(token.strip())
     if not token:
         return False
     # Replace " and " connectors so "Alice and Bob" → ["Alice", "Bob"]
@@ -65,9 +87,16 @@ def _looks_like_name(token: str) -> bool:
 
 
 def _is_author_line(stripped: str) -> bool:
-    """Return True if the line looks like a list of author names."""
+    """Return True if the line looks like a list of author names.
+
+    Handles the publisher-decorated form ``Name1,2,9, Other Name3,4`` by
+    pre-stripping trailing affiliation digit/symbol markers and
+    discarding bare-digit tokens that fall out of the comma split.
+    """
     normalised = re.sub(r"\s+and\s+", ", ", stripped, flags=re.IGNORECASE)
-    parts = [p.strip() for p in normalised.split(",") if p.strip()]
+    raw_parts = [p.strip() for p in normalised.split(",") if p.strip()]
+    # Drop bare-digit fragments that come from splitting "Smith1,2,9".
+    parts = [p for p in raw_parts if not re.fullmatch(r"[\d\*†‡§¶★]+", p)]
     return len(parts) >= 2 and all(_looks_like_name(p) for p in parts)
 
 
@@ -87,6 +116,8 @@ def _should_skip_as_title(stripped: str) -> bool:
     # License / copyright text
     if _LICENSE_WORDS.search(stripped):
         return True
+    if _CITATION_FOOTER_RE.search(stripped):
+        return True
     # Institutional affiliation
     if _AFFILIATION_WORDS.search(stripped):
         return True
@@ -99,24 +130,135 @@ def _should_skip_as_title(stripped: str) -> bool:
     # Journal header with volume info (e.g. "Nature | Vol 636")
     if re.match(r"^[A-Z][a-z]+\s*\|\s*Vol\s+\d+", stripped):
         return True
-    # Journal format labels (Nature-style)
+    # Journal format labels (Nature-style). The exact-match list catches
+    # short labels; the regex below catches the longer journal badge
+    # variants ("Review article", "Brief communication", "Check for
+    # updates", "Open access") that appear in tight bands across the
+    # top of the first page on Nature, Cell, Science, etc.
     if stripped in ("Article", "Letter", "Review", "Perspective", "Brief Communication"):
+        return True
+    if _JOURNAL_BADGE_RE.match(stripped):
         return True
     return False
 
 
-def _extract_title(lines: list[str], front_matter_end: int) -> str | None:
-    """Return the first plausible title line in the front-matter block.
+# Journal-page badge text. ``Review article`` and ``Check for updates``
+# share the top header band on Nature Reviews papers; layout=True often
+# extracts them as a single line where their text fragments meet, so
+# we filter both the joined and the bare forms.
+_JOURNAL_BADGE_RE = re.compile(
+    r"^(?:"
+    r"(?:Review|Research|Brief)\s+(?:article|communication|report)"
+    r"|Check\s+for\s+updates"
+    r"|Open\s+access"
+    r"|Open\s+Access\s+article"
+    r"|Original\s+research"
+    r"|Mini-?review"
+    r"|Systematic\s+review"
+    r")(?:\s+.*)?$",
+    re.IGNORECASE,
+)
 
-    A title candidate must:
-    - Be 5–200 characters
-    - Start with an uppercase letter
-    - Not look like license/copyright text, a URL/DOI, an affiliation, or an author list
+
+def _looks_like_title_fragment(stripped: str, *, max_words: int = 12) -> bool:
+    """Return True if ``stripped`` could be a continuation of a title.
+
+    Title fragments are short (a few words at most), have no terminal
+    punctuation, and consist of letters and dashes only. Author lines,
+    affiliations, and full sentences are filtered out by the regular
+    skip rules so the only thing this needs to add is the
+    "lowercase-starting continuation" case (e.g. ``to advance CRISPR-
+    based`` after ``Harnessing artificial intelligence``).
     """
-    for line in lines[:front_matter_end]:
+    if not stripped or len(stripped) > 100:
+        return False
+    if stripped[-1] in ".!?:;":
+        return False
+    words = stripped.split()
+    if not (1 <= len(words) <= max_words):
+        return False
+    # Reject lines with too many digits (page numbers, table caps).
+    digit_chars = sum(1 for c in stripped if c.isdigit())
+    if digit_chars > len(stripped) * 0.20:
+        return False
+    if _is_author_line(stripped):
+        return False
+    if _AFFILIATION_WORDS.search(stripped):
+        return False
+    if _URL_OR_DOI.search(stripped):
+        return False
+    # A single human name on its own line ("John Smith", "Alice Johnson")
+    # is the start of an author block, not a title fragment. The
+    # ``_is_author_line`` check above misses it because that requires
+    # two-or-more comma-separated names — a solo name slips through.
+    if _looks_like_name(stripped):
+        return False
+    return True
+
+
+def _join_title_continuations(
+    lines: list[str],
+    title_idx: int,
+    front_matter_end: int,
+) -> str:
+    """Glue title fragments that layout=True split across lines.
+
+    Starts at ``title_idx`` (the line we already accepted as the head
+    of the title) and walks forward, absorbing consecutive lines that
+    look like title fragments. Stops at:
+
+    * a blank-line block deeper than 3 lines
+    * an author line (multi-name comma list)
+    * the front-matter boundary
+    * 5 fragments collected (sanity cap)
+
+    The collected pieces are joined with single spaces; redundant
+    inner whitespace is collapsed.
+    """
+    head = lines[title_idx].strip()
+    pieces = [head]
+
+    blank_run = 0
+    consumed_after_head = 0
+    for j in range(title_idx + 1, min(len(lines), front_matter_end)):
+        candidate = lines[j].strip()
+        if not candidate:
+            blank_run += 1
+            if blank_run > 3:
+                break
+            continue
+        # Author line ends the title.
+        if _is_author_line(candidate):
+            break
+        # Anything ending a sentence ends the title.
+        if not _looks_like_title_fragment(candidate):
+            break
+        pieces.append(candidate)
+        consumed_after_head += 1
+        blank_run = 0
+        if consumed_after_head >= 5:
+            break
+
+    joined = " ".join(pieces)
+    return re.sub(r"\s+", " ", joined).strip()
+
+
+def _extract_title(lines: list[str], front_matter_end: int) -> str | None:
+    """Return the first plausible title in the front-matter block.
+
+    Picks the first line that passes the skip filter, then absorbs any
+    short follow-on fragments that look like title continuations
+    (single phrase per line, no terminal punctuation). Layout-mode
+    extraction frequently splits a multi-line title across 2-3 short
+    lines with whitespace gaps in between; without joining, the title
+    field captures only the first phrase ("Harnessing artificial
+    intelligence") and loses the rest ("to advance CRISPR-based
+    genome editing technologies").
+    """
+    for idx, line in enumerate(lines[:front_matter_end]):
         stripped = line.strip()
         if not _should_skip_as_title(stripped):
-            return stripped
+            return _join_title_continuations(lines, idx, front_matter_end)
     return None
 
 
