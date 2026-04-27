@@ -88,6 +88,73 @@ def test_extended_data_figure_linked():
     assert '<a id="extended-data-fig-2"></a>' in out
 
 
+def test_extended_data_mention_does_not_get_nested_inner_link():
+    """Regression: ``Extended Data Fig. 1e`` was producing
+    ``[Extended Data [Fig. 1e](#fig-1)](#extended-data-fig-1)`` because the
+    ``Fig.`` pattern re-matched inside the ``Extended Data Fig.`` pattern's
+    output. Renderers fail on nested links AND the inner anchor is wrong
+    (``#fig-1`` should be ``#extended-data-fig-1``)."""
+    md = (
+        "as shown in Extended Data Fig. 1e and elsewhere.\n\n"
+        "![Extended Data Fig. 1 | Caption.](fig-ext-1)"
+    )
+    figures = [Figure(id="fig-ext-1", page=1)]
+    figure_index = [_fig_index("fig-ext-1", 1, is_extended=True)]
+    doc = _doc(md, figures=figures, figure_index=figure_index)
+
+    out = add_cross_references(md, doc)
+
+    # The single, correct link must be present.
+    assert "[Extended Data Fig. 1e](#extended-data-fig-1)" in out
+    # The buggy nested form must NOT appear in any variation.
+    assert "[Extended Data [Fig." not in out
+    assert "](#fig-1)](#extended-data-fig-1)" not in out
+
+
+def test_extended_data_panel_range_does_not_nest():
+    """Range panels like ``Extended Data Fig. 5d,e`` and ``Fig. 2b–d``
+    must also rewrite as a single link with the panel suffix preserved."""
+    md = (
+        "see Extended Data Fig. 5d,e for the timecourse and "
+        "Fig. 2b–d for the controls.\n\n"
+        "![Fig. 2 | Controls.](fig2)\n\n"
+        "![Extended Data Fig. 5 | Timecourse.](fig-ext-5)"
+    )
+    figures = [Figure(id="fig2", page=1), Figure(id="fig-ext-5", page=2)]
+    figure_index = [
+        _fig_index("fig2", 2),
+        _fig_index("fig-ext-5", 5, is_extended=True),
+    ]
+    doc = _doc(md, figures=figures, figure_index=figure_index)
+
+    out = add_cross_references(md, doc)
+
+    assert "[Extended Data Fig. 5d,e](#extended-data-fig-5)" in out
+    assert "[Fig. 2b–d](#fig-2)" in out
+    # Neither should be wrapped in another link.
+    assert "[Extended Data [Fig." not in out
+    assert "[[Fig." not in out
+
+
+def test_figure_word_does_not_shadow_fig_period():
+    """``Figure 3`` and ``Fig. 3`` both link, neither wraps the other."""
+    md = (
+        "Figure 3 explains the model; see also Fig. 3 for details.\n\n"
+        "![Fig. 3 | Model.](fig3)"
+    )
+    figures = [Figure(id="fig3", page=1)]
+    figure_index = [_fig_index("fig3", 3)]
+    doc = _doc(md, figures=figures, figure_index=figure_index)
+
+    out = add_cross_references(md, doc)
+
+    assert "[Figure 3](#fig-3)" in out
+    assert "[Fig. 3](#fig-3)" in out
+    # No nesting of one inside the other.
+    assert "[Figure [Fig." not in out
+    assert "[Fig. [Figure" not in out
+
+
 # --- Sections ------------------------------------------------------------
 
 
