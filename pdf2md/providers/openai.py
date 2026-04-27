@@ -11,7 +11,10 @@ from pdf2md.providers._ratelimit import RateLimiter, is_429
 class OpenAIProvider:
     """OpenAI GPT provider via the Chat Completions REST API."""
 
-    _DEFAULT_MODEL = "gpt-4o"
+    # gpt-4o-mini is ~10x cheaper than gpt-4o at comparable vision quality
+    # for caption / table / verify-style work. Pick the heavier model
+    # explicitly via provider="openai/gpt-4o" when you need it.
+    _DEFAULT_MODEL = "gpt-4o-mini"
     _BASE_URL = "https://api.openai.com/v1/chat/completions"
 
     def __init__(self, model: str | None = None) -> None:

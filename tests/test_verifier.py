@@ -86,6 +86,48 @@ def test_run_verify_loop_does_not_loop_on_error():
     assert mock_provider.complete_sync.call_count == 1
 
 
+def test_run_verify_loop_invokes_on_error_with_explanation():
+    """Provider failures must surface their explanation through on_error so
+    callers can attach the failure to ``Document.warnings``. Silent
+    degradation is the bug PR A is fixing."""
+    mock_provider = MagicMock()
+    mock_provider.complete_sync.side_effect = Exception("404 Not Found gemini-2.0-flash")
+    seen_errors: list[str] = []
+    markdown, confidence = run_verify_loop(
+        b"fake_image",
+        "Some original markdown.",
+        mock_provider,
+        max_rounds=2,
+        on_error=seen_errors.append,
+    )
+    assert markdown == "Some original markdown."
+    assert confidence == 0.0
+    assert len(seen_errors) == 1
+    assert "404" in seen_errors[0]
+    # The loop must terminate immediately; we should not pay for retries
+    # against a model that doesn't exist.
+    assert mock_provider.complete_sync.call_count == 1
+
+
+def test_run_verify_loop_on_error_callback_failure_does_not_propagate():
+    """A buggy on_error callback should never crash the conversion pipeline."""
+    mock_provider = MagicMock()
+    mock_provider.complete_sync.side_effect = Exception("boom")
+
+    def bad_callback(_explanation: str) -> None:
+        raise RuntimeError("callback exploded")
+
+    markdown, confidence = run_verify_loop(
+        b"fake_image",
+        "Some original markdown.",
+        mock_provider,
+        max_rounds=2,
+        on_error=bad_callback,
+    )
+    assert markdown == "Some original markdown."
+    assert confidence == 0.0
+
+
 def test_verify_loop_passes_immediately():
     mock_provider = MagicMock()
     mock_provider.complete_sync.return_value = json.dumps({

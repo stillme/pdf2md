@@ -1,4 +1,23 @@
-"""VLM provider auto-detection and instantiation."""
+"""VLM provider auto-detection and instantiation.
+
+Default model selection is biased for cost — the headline use case is
+batch-processing thousands of papers, so per-paper $/page matters more
+than peak per-call quality. Indicative pricing as of Apr 2026:
+
+    gemini-2.5-flash       $0.30 in / $2.50 out per 1M tok    (default)
+    gemini-2.5-flash-lite  $0.10 in / $0.40 out per 1M tok
+    gemini-2.5-pro         $1.25 in / $10.0 out per 1M tok
+    gpt-4o-mini            $0.15 in / $0.60 out per 1M tok    (OpenAI default)
+    gpt-4o                 $2.50 in / $10.0 out per 1M tok
+    claude-haiku-4-5       $1.00 in / $5.00 out per 1M tok    (Anthropic default)
+
+Override per-call with ``provider="<name>/<model_id>"`` —
+e.g. ``provider="gemini/gemini-2.5-pro"`` for the strongest verifier.
+
+Per-task model routing (cheap model for figure descriptions, capable
+model for verification) is a planned follow-up — currently every VLM
+call shares one provider.
+"""
 from __future__ import annotations
 import os
 from pdf2md.providers.base import VLMProvider
@@ -10,7 +29,7 @@ def detect_providers() -> list[dict]:
         "name": "gemini",
         "available": bool(os.environ.get("GEMINI_API_KEY")),
         "env_var": "GEMINI_API_KEY",
-        "default_model": "gemini-2.0-flash",
+        "default_model": "gemini-2.5-flash",
     })
     providers.append({
         "name": "anthropic",
@@ -22,7 +41,7 @@ def detect_providers() -> list[dict]:
         "name": "openai",
         "available": bool(os.environ.get("OPENAI_API_KEY")),
         "env_var": "OPENAI_API_KEY",
-        "default_model": "gpt-4o",
+        "default_model": "gpt-4o-mini",
     })
     ollama_available = False
     try:

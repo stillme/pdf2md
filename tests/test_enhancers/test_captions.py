@@ -164,6 +164,26 @@ def test_sync_caption_alt_text_includes_figure_labels():
     assert "![Extended Data Fig. 1 | Extended caption.](fig2)" in result
 
 
+def test_sync_caption_alt_text_handles_backslash_letter_in_caption():
+    """A caption containing ``\\B``, ``\\d``, etc. used to crash with
+    ``re.PatternError: bad escape \\B`` because the alt text was passed
+    as the ``repl`` argument of ``re.sub`` and Python's regex engine
+    interprets backslash-letter sequences as group references in repl
+    strings. See PR A — captions regex crash."""
+    figures = [Figure(id="fig1", page=1)]
+    # Caption has a literal backslash-B. Real PDFs hit this with math
+    # captions like ``\\Beta`` or LaTeX residue.
+    captions = [
+        {"fig_num": 1, "caption": r"Math caption with \B in it.", "is_extended": False},
+    ]
+    markdown = "![Figure 1](fig1)"
+
+    # Must not raise.
+    result = sync_caption_alt_text(markdown, figures, captions)
+
+    assert r"\B" in result
+
+
 def test_remove_caption_text_blocks_uses_extracted_line_range():
     markdown = (
         "Body before\n"
