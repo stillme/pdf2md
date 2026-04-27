@@ -66,9 +66,15 @@ class ClaudeCLIProvider:
     Auth piggybacks on the user's logged-in CLI session (run ``claude /login``
     once), so calls are billed against the subscription rather than an
     API key. There is no automatic fallback to the API.
+
+    Default model is ``haiku`` because the dominant batch workload is
+    figure description and table cleanup — Haiku handles both reliably
+    at ~3x the throughput of Sonnet on the same subscription. Pick
+    ``provider="claude-cli/sonnet"`` (or ``opus``) when accuracy on a
+    specific paper matters more than batch speed.
     """
 
-    _DEFAULT_MODEL = "sonnet"
+    _DEFAULT_MODEL = "haiku"
 
     def __init__(
         self,

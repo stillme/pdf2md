@@ -306,3 +306,20 @@ def test_detect_providers_marks_claude_cli_unavailable_when_missing():
         entries = detect_providers()
     cli_entry = next(e for e in entries if e["name"] == "claude-cli")
     assert cli_entry["available"] is False
+
+
+def test_default_model_is_haiku_for_batch_throughput():
+    """``haiku`` is the right default for batch use — figure descriptions
+    and table cleanup are the dominant tasks and Haiku handles both at
+    ~3x the throughput of Sonnet on the same subscription window."""
+    provider = ClaudeCLIProvider()
+    assert provider._model == "haiku"
+
+
+def test_registry_default_for_claude_cli_is_haiku():
+    from pdf2md.providers.registry import detect_providers
+
+    with patch("shutil.which", return_value="/usr/bin/claude"):
+        entries = detect_providers()
+    cli_entry = next(e for e in entries if e["name"] == "claude-cli")
+    assert cli_entry["default_model"] == "haiku"

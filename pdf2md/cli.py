@@ -33,9 +33,15 @@ def main():
 )
 @click.option("--provider", default=None, help="VLM provider override.")
 @click.option("--verify/--no-verify", default=True, help="Run verification passes.")
+@click.option(
+    "--equations/--no-equations",
+    default=True,
+    help="VLM equation extraction on math-heavy pages. Disable for "
+         "biomedical / text-heavy batch jobs to save VLM calls.",
+)
 @click.option("--json-output", "--json", "json_out", is_flag=True, help="Output as JSON.")
 @click.option("--figures-json", default=None, help="Write lightweight figure index sidecar JSON.")
-def convert(source, output, tier, figures, provider, verify, json_out, figures_json):
+def convert(source, output, tier, figures, provider, verify, equations, json_out, figures_json):
     """Convert a PDF to markdown.
 
     SOURCE can be a file path or URL.
@@ -49,6 +55,7 @@ def convert(source, output, tier, figures, provider, verify, json_out, figures_j
             figures=figures,
             verify=verify,
             provider=provider,
+            equations=equations,
         )
     except FileNotFoundError as e:
         click.echo(f"Error: {e}", err=True)

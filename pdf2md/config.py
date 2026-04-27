@@ -25,6 +25,12 @@ class FigureMode(str, Enum):
 class Config(BaseModel):
     tier: Tier = Tier.AUTO
     figures: FigureMode = FigureMode.CAPTION
+    # Equation extraction calls a VLM once per math-heavy page. Disable
+    # for batch jobs on text-heavy corpora (biomedical, social sciences)
+    # — those papers rarely have meaningful math but the heuristic still
+    # fires on isolated Greek letters or ``=`` characters and burns
+    # subscription quota / API spend.
+    equations: bool = True
     verify: bool = True
     provider: str | None = None
     output_dir: str | None = None
@@ -40,10 +46,15 @@ class Config(BaseModel):
                 "tier": "PDF2MD_TIER",
                 "figures": "PDF2MD_FIGURES",
                 "provider": "PDF2MD_PROVIDER",
+                "equations": "PDF2MD_EQUATIONS",
             }
             for field, env_var in env_map.items():
                 if field not in data or data[field] is None:
                     val = os.environ.get(env_var)
                     if val is not None:
                         data[field] = val
+            # Coerce env-string equations to bool.
+            eq = data.get("equations")
+            if isinstance(eq, str):
+                data["equations"] = eq.lower() in ("1", "true", "yes", "on")
         return data
