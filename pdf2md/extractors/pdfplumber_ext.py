@@ -12,6 +12,48 @@ from pdf2md.extractors.base import ExtractionResult, PageContent, RawTable
 _NUMERIC_RE = re.compile(r"^[\s\-+()$%]*\d[\d.,\s%]*[\s\-+()$%]*$")
 
 
+def _is_degenerate_table(headers: list[str], rows: list[list[str]]) -> bool:
+    """Return True if a 'table' is junk that should be dropped entirely.
+
+    pdfplumber's default ``extract_tables`` flags any region with
+    detected horizontal/vertical lines as a table — including bordered
+    figure panels, decorative boxes, and column rules in two-column
+    layouts. These produce all-empty cell grids that have no
+    information value but still count toward the VLM enhancement
+    budget (any table with ``confidence < CONFIDENCE_THRESHOLD``
+    triggers a VLM call). On the Nature gut paper this single filter
+    eliminates 7 spurious VLM calls per document.
+
+    A table is considered degenerate when:
+    * Every cell (header + data rows) is empty/whitespace, OR
+    * It has fewer than 2 columns AND fewer than 2 non-empty cells —
+      i.e. effectively a single text fragment that pdfplumber
+      happened to enclose in border-detected lines.
+    """
+    all_cells = list(headers) + [c for row in rows for c in row]
+    non_empty = [c for c in all_cells if c.strip()]
+    if not non_empty:
+        return True
+    if len(headers) < 2 and len(non_empty) < 2:
+        return True
+    return False
+
+
+# Cell-text sanitization. Markdown tables are line-oriented: a literal
+# newline inside a ``|`` cell breaks the row and corrupts every cell
+# after it. A pipe character likewise terminates the cell early. Both
+# happen in the wild on multi-line cells (e.g. Cancer Cell tables that
+# pdfplumber returns as ``Novartis\nPharmaceuticals``). We collapse
+# all internal whitespace to a single space and escape literal pipes
+# so downstream markdown parsers (and KG ingest pipelines) see
+# well-formed rows.
+def _sanitize_cell(text: str) -> str:
+    if not text:
+        return ""
+    cleaned = re.sub(r"\s+", " ", text).strip()
+    return cleaned.replace("|", "\\|")
+
+
 def _table_confidence(headers: list[str], rows: list[list[str]]) -> float:
     """Score a table 0-1 from padding ratio, column variance, header sanity, and shape."""
     if not headers or not rows:
@@ -26,11 +68,21 @@ def _table_confidence(headers: list[str], rows: list[list[str]]) -> float:
     ragged = sum(1 for r in rows if len(r) != n_cols)
     if ragged:
         score -= 0.15 + min(0.35, 0.35 * ragged / max(1, len(rows)))
-    # Padding ratio: empty cells / total cells (across header + rows)
+    # Padding ratio: empty cells / total cells (across header + rows).
+    # An almost-entirely-empty grid (>=95% padding) should bottom out
+    # hard rather than land at ~0.5 where it still trips the VLM
+    # enhancer threshold (see ``enhancers/tables.CONFIDENCE_THRESHOLD``).
+    # Truly all-empty grids are dropped upstream by
+    # ``_is_degenerate_table``; this clause is the defensive layer for
+    # near-empty grids (e.g. a 4x5 with two stray cells of OCR noise)
+    # that would otherwise burn a VLM call for no useful gain.
     cells = [c for r in [headers] + rows for c in r]
     if cells:
-        empty = sum(1 for c in cells if not c.strip())
-        score -= min(0.5, (empty / len(cells)) * 0.7)
+        empty_ratio = sum(1 for c in cells if not c.strip()) / len(cells)
+        if empty_ratio >= 0.95:
+            score -= 0.9
+        else:
+            score -= min(0.5, empty_ratio * 0.7)
     # Header sanity: numeric-looking header cells suggest data-as-header
     non_empty_headers = [h for h in headers if h.strip()]
     if non_empty_headers:
@@ -258,11 +310,21 @@ class PdfplumberExtractor:
             if not raw_table or len(raw_table) < 2:
                 continue
 
-            headers = [str(cell or "").strip() for cell in raw_table[0]]
+            # Sanitize each cell as we read it so headers/rows stored
+            # on the Table object are themselves clean — downstream
+            # consumers (KG ingest, table comparators) read the
+            # ``rows``/``headers`` lists directly, not just the
+            # rendered markdown.
+            headers = [_sanitize_cell(str(cell or "")) for cell in raw_table[0]]
             rows = [
-                [str(cell or "").strip() for cell in row]
+                [_sanitize_cell(str(cell or "")) for cell in row]
                 for row in raw_table[1:]
             ]
+
+            # Drop pdfplumber's bordered-region false positives —
+            # see ``_is_degenerate_table`` for rationale.
+            if _is_degenerate_table(headers, rows):
+                continue
 
             markdown = self._table_to_markdown(headers, rows)
             tables.append(RawTable(
