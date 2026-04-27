@@ -1,5 +1,17 @@
 """VLM provider auto-detection and instantiation.
 
+Available providers (override per call with ``provider="<name>/<model>"``):
+
+* ``gemini`` — REST API, needs ``GEMINI_API_KEY``. Cheapest API option.
+* ``openai`` — REST API, needs ``OPENAI_API_KEY``.
+* ``anthropic`` — REST API, needs ``ANTHROPIC_API_KEY``.
+* ``ollama`` — local Ollama server (no key, runs on localhost:11434).
+* ``claude-cli`` — wraps the local ``claude`` binary; auth via the
+  user's logged-in subscription (Pro / Max / Team) so calls do NOT bill
+  any API key. Slower per call (~3-6s) than the REST providers because
+  every call spawns a subprocess; ideal for batch jobs where a fixed
+  subscription budget beats per-token API spend.
+
 Default model selection is biased for cost — the headline use case is
 batch-processing thousands of papers, so per-paper $/page matters more
 than peak per-call quality. Indicative pricing as of Apr 2026:
@@ -10,9 +22,16 @@ than peak per-call quality. Indicative pricing as of Apr 2026:
     gpt-4o-mini            $0.15 in / $0.60 out per 1M tok    (OpenAI default)
     gpt-4o                 $2.50 in / $10.0 out per 1M tok
     claude-haiku-4-5       $1.00 in / $5.00 out per 1M tok    (Anthropic default)
+    claude-cli             $0 (subscription)                   (subscription auth)
 
-Override per-call with ``provider="<name>/<model_id>"`` —
-e.g. ``provider="gemini/gemini-2.5-pro"`` for the strongest verifier.
+Override per-call with ``provider="<name>/<model_id>"`` — e.g.
+``provider="gemini/gemini-2.5-pro"`` for the strongest verifier, or
+``provider="claude-cli/sonnet"`` to use the subscription path.
+
+Auto-detection (when ``provider`` is unset) picks the first API
+provider whose key is set, in the order above. ``claude-cli`` is
+intentionally last so users with API keys keep the faster default;
+opt in explicitly with ``provider="claude-cli"``.
 
 Per-task model routing (cheap model for figure descriptions, capable
 model for verification) is a planned follow-up — currently every VLM
@@ -42,6 +61,16 @@ def detect_providers() -> list[dict]:
         "available": bool(os.environ.get("OPENAI_API_KEY")),
         "env_var": "OPENAI_API_KEY",
         "default_model": "gpt-4o-mini",
+    })
+    # Claude CLI: zero-API-cost mode that piggybacks on a logged-in
+    # ``claude`` subscription (Pro / Max / Team). Detected by binary
+    # presence rather than env var; auth lives in the CLI config.
+    import shutil as _shutil
+    providers.append({
+        "name": "claude-cli",
+        "available": _shutil.which("claude") is not None,
+        "env_var": None,
+        "default_model": "sonnet",
     })
     ollama_available = False
     try:
@@ -83,4 +112,7 @@ def get_provider(provider_string: str | None = None) -> VLMProvider | None:
     elif provider_name == "ollama":
         from pdf2md.providers.ollama import OllamaProvider
         return OllamaProvider(model=model)
+    elif provider_name in ("claude-cli", "claude_cli"):
+        from pdf2md.providers.claude_cli import ClaudeCLIProvider
+        return ClaudeCLIProvider(model=model)
     return None
