@@ -34,29 +34,25 @@ from pdf2md.document import Document
 # Figure markers: ``![alt text](id_or_path)``
 _FIGURE_MARKER_RE = re.compile(r"^\s*!\[(?P<alt>[^\]]*)\]\((?P<id>[^)]+)\)\s*$")
 
-# Figure mention patterns. We capture an optional panel suffix so that
-# ``Fig. 3a`` keeps the ``a`` in link text while still anchoring at fig-3.
-# Order matters: ``Extended Data Fig.`` must be tried first so the simpler
-# ``Fig.`` pattern doesn't shadow it.
-_FIGURE_MENTION_RES: list[tuple[re.Pattern[str], bool, str]] = [
-    (
-        re.compile(
-            r"\bExtended\s+Data\s+Fig\.?\s+(\d+)([a-z](?:[,–-][a-z])*)?\b"
-        ),
-        True,
-        "Extended Data Fig.",
-    ),
-    (
-        re.compile(r"\bFigure\s+(\d+)([a-z](?:[,–-][a-z])*)?\b"),
-        False,
-        "Figure",
-    ),
-    (
-        re.compile(r"\bFig\.\s+(\d+)([a-z](?:[,–-][a-z])*)?\b"),
-        False,
-        "Fig.",
-    ),
-]
+# Single combined figure-mention pattern. All three labels alternate inside
+# one regex so a single ``re.sub`` pass rewrites every mention. This is the
+# fix for the nested-link regression: with one pass per pattern, the
+# ``Fig.`` regex re-matched the ``Fig. 1e`` text *inside* a link the
+# ``Extended Data Fig.`` regex had just produced, yielding
+# ``[Extended Data [Fig. 1e](#fig-1)](#extended-data-fig-1)`` and the
+# wrong inner anchor. Combined-pass + leftmost-longest ordering avoids
+# that entirely — the matcher only examines each character once.
+#
+# Alternation order is significant: Python ``re`` is leftmost-first (not
+# longest), so ``Extended Data Fig.`` must come before ``Fig.`` to win at
+# positions where both could start.
+_FIGURE_MENTION_RE = re.compile(
+    r"\b(?:"
+    r"(?P<extended_label>Extended\s+Data\s+Fig\.?)"
+    r"|(?P<figure_label>Figure)"
+    r"|(?P<fig_label>Fig\.)"
+    r")\s+(?P<num>\d+)(?P<panel>[a-z](?:[,–-][a-z])*)?\b"
+)
 
 # Section mention: ``Section 4.2`` (capture the dotted number).
 _SECTION_MENTION_RE = re.compile(r"\bSection\s+(\d+(?:\.\d+)*)\b")
@@ -352,13 +348,10 @@ def _rewrite_line(
     O(n) overall for the markdown.
     """
     if figure_anchors:
-        for pattern, is_extended, label_word in _FIGURE_MENTION_RES:
-            line = pattern.sub(
-                lambda m, ext=is_extended, lw=label_word: _replace_figure(
-                    m, figure_anchors, ext, lw
-                ),
-                line,
-            )
+        line = _FIGURE_MENTION_RE.sub(
+            lambda m: _replace_figure_mention(m, figure_anchors),
+            line,
+        )
 
     if section_anchors:
         line = _SECTION_MENTION_RE.sub(
@@ -373,14 +366,26 @@ def _rewrite_line(
     return line
 
 
-def _replace_figure(
+def _replace_figure_mention(
     match: re.Match[str],
     figure_anchors: dict[tuple[int, bool], str],
-    is_extended: bool,
-    label_word: str,
 ) -> str:
-    number = int(match.group(1))
-    panel = match.group(2) or ""
+    """Rewrite a single figure-mention match into a markdown link.
+
+    Decides ``is_extended`` and the printed label by inspecting which
+    alternation in :data:`_FIGURE_MENTION_RE` matched. The link text
+    preserves the original label so ``Figure 3a`` doesn't become
+    ``Fig. 3a`` (or vice-versa) — only the anchor is canonical.
+    """
+    is_extended = match.group("extended_label") is not None
+    if is_extended:
+        label_word = "Extended Data Fig."
+    elif match.group("figure_label") is not None:
+        label_word = "Figure"
+    else:
+        label_word = "Fig."
+    number = int(match.group("num"))
+    panel = match.group("panel") or ""
     anchor = figure_anchors.get((number, is_extended))
     if not anchor:
         return match.group(0)
