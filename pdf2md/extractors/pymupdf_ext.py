@@ -17,6 +17,124 @@ _AUTHOR_RE = re.compile(r"^[A-Z][a-z]+ [A-Z][a-z]+(?:,\s*[A-Z][a-z]+ [A-Z][a-z]+
 # Pattern for superscript annotations or footnote markers
 _SUPERSCRIPT_RE = re.compile(r"^\d+[,\s\d]*$")
 
+# --- Vector-figure detection ------------------------------------------------
+#
+# Modern review journals (Nature Reviews, eLife illustrated reviews,
+# many Cell-press graphical abstracts) render figures as PDF vector
+# paths rather than embedded raster images. ``page.get_images()``
+# returns an empty list for such pages even though the figure is
+# clearly visible. Rendering the page area where vector drawings live
+# recovers the figure as a PNG so the rest of the pipeline (caption
+# matching, VLM description) can treat it like any raster figure.
+
+# Below this drawing count a "page with vectors" is just decorative
+# rules / box borders, not a real figure region. Tuned against
+# Nat Rev Genetics where real figure pages have 1500-2500 drawings
+# and unrelated pages have 20-40.
+_MIN_VECTOR_DRAWINGS_PER_PAGE = 100
+
+# Vertical gap (PDF points) that separates two distinct figures on
+# the same page. A 30pt gap (~10mm) is more than typical inter-line
+# spacing but smaller than the gap between a figure and surrounding
+# body text. Used to cluster drawings into per-figure regions.
+_FIGURE_VERTICAL_GAP_PT = 30.0
+
+# Minimum bbox area (square points) for a region to count as a figure.
+# Single rule lines / decorative boxes can produce small clusters of
+# drawings that we don't want to render.
+_MIN_FIGURE_AREA_PT2 = 20_000
+
+# Pixmap render DPI for vector figure regions. 150 DPI matches the
+# resolution our VLM page renderer uses elsewhere — high enough for
+# Sonnet/Haiku to read axis labels, low enough not to bloat output.
+_VECTOR_FIGURE_DPI = 150
+
+
+def _cluster_drawings_by_y(
+    drawings: list[dict], gap: float = _FIGURE_VERTICAL_GAP_PT,
+) -> list[tuple[float, float, float, float]]:
+    """Group page drawings into bounding boxes by vertical proximity.
+
+    Each returned bbox is ``(x0, y0, x1, y1)`` covering one cluster of
+    drawings whose y-ranges overlap or are within ``gap`` points of
+    each other. The caller renders one image per bbox, so a page with
+    Figure 1 at the top and Figure 2 at the bottom yields two
+    figures rather than one giant figure spanning empty space.
+    """
+    rects: list[tuple[float, float, float, float]] = []
+    for d in drawings:
+        rect = d.get("rect")
+        if rect is None:
+            continue
+        # Normalise — pymupdf rects expose .x0/.y0/.x1/.y1 attributes.
+        try:
+            r = (float(rect.x0), float(rect.y0), float(rect.x1), float(rect.y1))
+        except Exception:
+            continue
+        # Reject zero-area degenerate rects (path control points etc.)
+        if r[2] <= r[0] or r[3] <= r[1]:
+            continue
+        rects.append(r)
+    if not rects:
+        return []
+
+    # Sort by y0 ascending, then sweep merging anything within `gap`.
+    rects.sort(key=lambda r: r[1])
+    clusters: list[list[tuple[float, float, float, float]]] = [[rects[0]]]
+    for r in rects[1:]:
+        last_cluster = clusters[-1]
+        cluster_y1 = max(c[3] for c in last_cluster)
+        if r[1] - cluster_y1 <= gap:
+            last_cluster.append(r)
+        else:
+            clusters.append([r])
+
+    bboxes: list[tuple[float, float, float, float]] = []
+    for cluster in clusters:
+        x0 = min(c[0] for c in cluster)
+        y0 = min(c[1] for c in cluster)
+        x1 = max(c[2] for c in cluster)
+        y1 = max(c[3] for c in cluster)
+        if (x1 - x0) * (y1 - y0) >= _MIN_FIGURE_AREA_PT2:
+            bboxes.append((x0, y0, x1, y1))
+    return bboxes
+
+
+def _extract_vector_figures(page, page_idx: int) -> list[dict]:
+    """Render dense vector-drawing regions on ``page`` as PNG figures.
+
+    Skips pages with too few drawings (decorative rules don't count).
+    Returns the same dict shape as the raster path so the caller can
+    treat both uniformly.
+    """
+    try:
+        drawings = page.get_drawings()
+    except Exception:
+        return []
+    if len(drawings) < _MIN_VECTOR_DRAWINGS_PER_PAGE:
+        return []
+
+    bboxes = _cluster_drawings_by_y(drawings)
+    if not bboxes:
+        return []
+
+    figures: list[dict] = []
+    matrix = pymupdf.Matrix(_VECTOR_FIGURE_DPI / 72, _VECTOR_FIGURE_DPI / 72)
+    for bbox in bboxes:
+        try:
+            clip = pymupdf.Rect(*bbox)
+            pix = page.get_pixmap(matrix=matrix, clip=clip)
+            png = pix.tobytes("png")
+        except Exception:
+            continue
+        figures.append({
+            "page": page_idx,
+            "image_bytes": png,
+            "width": pix.width,
+            "height": pix.height,
+        })
+    return figures
+
 
 def _is_bold_span(span: dict) -> bool:
     """Return whether a PyMuPDF text span is bold or semibold."""
@@ -248,14 +366,27 @@ class PymupdfExtractor:
     ) -> list[dict]:
         """Extract significant images from the PDF.
 
-        Returns list of dicts: {"page": int, "image_bytes": bytes, "width": int, "height": int}
+        Returns list of dicts: ``{"page": int, "image_bytes": bytes,
+        "width": int, "height": int}``.
 
-        Filters: only images >= min_width x min_height (skips icons, decorations,
-        vector fragments).
+        Two passes:
 
-        When max_per_page is set (default 1), keeps only the largest images per
-        page by area. This prevents sub-panels (panels A, B, C of a composite
-        figure) from each counting as a separate figure.
+        1. Raster images via ``page.get_images()`` — the historical
+           behaviour; filters by ``min_width`` / ``min_height`` and
+           caps at ``max_per_page`` per page so composite-panel A/B/C
+           images don't each count as a separate figure.
+
+        2. Vector-graphics fallback for pages where raster extraction
+           produces nothing. Many modern review journals (Nature
+           Reviews Genetics, eLife illustrated reviews) render figures
+           as PDF vector paths instead of embedded raster images, so
+           ``get_images()`` returns an empty list. We instead cluster
+           the page's vector drawings into bounding-box regions by
+           vertical gap, render each cluster via
+           ``page.get_pixmap(clip=bbox)`` at 150 DPI, and emit those
+           PNGs as figures. Caption matching downstream pairs them
+           with the right ``Fig. N | ...`` line by page order, so no
+           wiring change is needed.
         """
         try:
             doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
@@ -264,6 +395,7 @@ class PymupdfExtractor:
 
         figures: list[dict] = []
         seen_xrefs: set[int] = set()
+        pages_with_raster: set[int] = set()
 
         for page_idx in range(len(doc)):
             page = doc[page_idx]
@@ -289,10 +421,9 @@ class PymupdfExtractor:
                             "width": width,
                             "height": height,
                         })
+                        pages_with_raster.add(page_idx)
                 except Exception:
                     pass
-
-        doc.close()
 
         # Limit to largest N images per page to avoid counting sub-panels
         # (panels A, B, C of a composite figure) as separate figures.
@@ -309,4 +440,14 @@ class PymupdfExtractor:
                 )
                 figures.extend(page_figs[:max_per_page])
 
+        # Vector-graphics fallback for pages with no qualifying raster.
+        for page_idx in range(len(doc)):
+            if page_idx in pages_with_raster:
+                continue
+            page = doc[page_idx]
+            vector_figs = _extract_vector_figures(page, page_idx)
+            figures.extend(vector_figs)
+
+        doc.close()
+        figures.sort(key=lambda f: f["page"])
         return figures
