@@ -17,6 +17,50 @@ _HEADING_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Cell-press / scientific paper canonical ALL-CAPS section names. Used as a
+# safety net when bold-heading extraction is unavailable: a line that is
+# entirely uppercase AND matches one of these vocabulary entries gets
+# promoted to a section even if it would otherwise fall through the
+# generic heading rules. Conservative on purpose — anything not in this
+# list (e.g. ALL-CAPS gene names, axis labels) stays as plain text.
+# The PDF text layer often substitutes simpler glyphs for the trademark
+# star (★ → +), so we accept either form.
+_ALLCAPS_SECTION_VOCAB = frozenset({
+    "ABSTRACT", "SUMMARY", "BACKGROUND",
+    "INTRODUCTION", "RESULTS", "DISCUSSION", "CONCLUSION", "CONCLUSIONS",
+    "METHODS", "MATERIALS AND METHODS", "EXPERIMENTAL PROCEDURES",
+    "STAR METHODS", "STAR+METHODS", "STAR★METHODS",
+    "KEY RESOURCES TABLE", "RESOURCE AVAILABILITY",
+    "EXPERIMENTAL MODEL AND SUBJECT DETAILS",
+    "METHOD DETAILS", "METHODS DETAILS",
+    "QUANTIFICATION AND STATISTICAL ANALYSIS",
+    "LIMITATIONS OF THE STUDY",
+    "ACKNOWLEDGMENTS", "ACKNOWLEDGEMENTS",
+    "AUTHOR CONTRIBUTIONS", "DECLARATION OF INTERESTS",
+    "DATA AVAILABILITY", "CODE AVAILABILITY",
+    "DATA AND CODE AVAILABILITY",
+    "REFERENCES", "BIBLIOGRAPHY",
+    "SUPPLEMENTAL INFORMATION", "SUPPLEMENTARY INFORMATION",
+    "SUPPLEMENTARY MATERIAL", "SUPPLEMENTARY MATERIALS",
+})
+
+# Allowed glyphs in an ALL-CAPS section line (letters/spaces/digits/&/-/–/★/+)
+_ALLCAPS_LINE_RE = re.compile(r"^[A-Z][A-Z0-9 \-–&★+]{3,59}$")
+
+
+def _normalise_caps_heading(text: str) -> str:
+    """Normalise an ALL-CAPS section heading so vocabulary lookups match.
+
+    Collapses runs of whitespace and drops the trademark/star ornament that
+    Cell-press uses inside ``STAR★METHODS`` (PyMuPDF often emits this as
+    ``+`` because the glyph lives in a symbol font that has no Unicode
+    mapping).
+    """
+    cleaned = re.sub(r"[\s]+", " ", text).strip()
+    cleaned = cleaned.replace("★", " ").replace("+", " ")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
 # Numbered headings with known section names: "1 Introduction", "2.1 Methods", "1. Results"
 _NUMBERED_KNOWN_RE = re.compile(
     r"^(\d+(?:\.\d+)*)\.?\s+"
@@ -70,6 +114,18 @@ def _is_heading(line: str) -> dict | None:
     # Standard section names (unnumbered)
     if _HEADING_PATTERNS.match(stripped):
         return {"text": stripped, "level": 1}
+
+    # Cell-press-style ALL-CAPS section names (single- or multi-word).
+    # This is a vocabulary-restricted safety net for cases where bold
+    # heading detection isn't available — e.g. when PyMuPDF is missing
+    # or when the publisher's font naming defeats bold sniffing.
+    # The vocabulary check is intentionally tight so we don't promote
+    # ALL-CAPS gene names ("RHOA"), table column headers, or figure
+    # axis labels.
+    if _ALLCAPS_LINE_RE.match(stripped):
+        normalised = _normalise_caps_heading(stripped)
+        if normalised in _ALLCAPS_SECTION_VOCAB:
+            return {"text": stripped, "level": 1}
 
     # ALL CAPS: require at least 2 words AND minimum 8 characters total
     if _ALLCAPS_RE.match(stripped) and len(stripped) >= 8:

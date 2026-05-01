@@ -335,3 +335,93 @@ def test_clean_hyphens_in_assembled_output():
     result = assemble_markdown(pages)
     assert "microbiota-driven" in result.markdown
     assert "region-enriched" in result.markdown
+
+
+# --- Cell-press ALL-CAPS section vocabulary ---
+
+def test_cell_press_allcaps_sections_promoted():
+    """Single- and multi-word ALL-CAPS section names from the canonical
+    Cell-press vocabulary should be promoted to headings even when the
+    generic ``2-6 word`` ALL-CAPS rule would reject them.
+    """
+    from pdf2md.assembler import _is_heading
+    # Single-word ALL-CAPS section names
+    assert _is_heading("INTRODUCTION") is not None
+    assert _is_heading("RESULTS") is not None
+    assert _is_heading("DISCUSSION") is not None
+    assert _is_heading("SUMMARY") is not None
+    assert _is_heading("REFERENCES") is not None
+    # Multi-word Cell-press sections
+    assert _is_heading("STAR+METHODS") is not None
+    assert _is_heading("STAR METHODS") is not None
+    assert _is_heading("KEY RESOURCES TABLE") is not None
+    assert _is_heading("LIMITATIONS OF THE STUDY") is not None
+    assert _is_heading("AUTHOR CONTRIBUTIONS") is not None
+    assert _is_heading("DECLARATION OF INTERESTS") is not None
+    assert _is_heading("EXPERIMENTAL PROCEDURES") is not None
+    assert _is_heading("DATA AND CODE AVAILABILITY") is not None
+
+
+def test_allcaps_gene_names_not_promoted_by_vocab():
+    """ALL-CAPS gene/protein names and other non-section terms must NOT
+    be promoted by the new vocabulary safety net. The vocab is
+    intentionally tight — only the well-known canonical section names
+    get a free pass; arbitrary ALL-CAPS terms must be rejected.
+    """
+    from pdf2md.assembler import _is_heading
+    # Single-word gene/protein names — none are in the vocabulary
+    assert _is_heading("RHOA") is None
+    assert _is_heading("BRCA1") is None
+    assert _is_heading("TP53") is None
+    assert _is_heading("FOXP3") is None
+    assert _is_heading("CRISPR") is None
+    # Single-word ALL-CAPS words that are NOT canonical section names
+    # — the vocabulary check specifically must not match these even
+    # though they pass the basic ALL-CAPS shape filter.
+    assert _is_heading("OVERVIEW") is None
+    assert _is_heading("METHODOLOGIES") is None
+    assert _is_heading("ANALYSIS") is None
+    # Substring-of-vocab words that aren't an exact match
+    assert _is_heading("RESULTSUMMARY") is None
+    assert _is_heading("METHODICAL") is None
+
+
+def test_mixed_case_headings_still_work():
+    """Standard mixed-case headings keep working alongside the new
+    vocabulary-based ALL-CAPS check.
+    """
+    from pdf2md.assembler import _is_heading
+    assert _is_heading("Introduction") is not None
+    assert _is_heading("Materials and Methods") is not None
+    assert _is_heading("1. Introduction") is not None
+    assert _is_heading("2.1 Data Collection") is not None
+    # Pre-existing 2-6 word ALL-CAPS rule still applies
+    assert _is_heading("OVERCOMING FUNCTIONAL CHALLENGES") is not None
+
+
+def test_allcaps_section_vocab_normalises_star_glyph():
+    """``STAR★METHODS`` should match the vocabulary even when PyMuPDF has
+    re-encoded the trademark star as a literal ``+`` (which happens when
+    the glyph lives in an unmapped symbol font).
+    """
+    from pdf2md.assembler import _is_heading
+    assert _is_heading("STAR+METHODS") is not None
+    assert _is_heading("STAR★METHODS") is not None
+
+
+def test_full_assembly_promotes_standalone_allcaps_section():
+    """End-to-end: a standalone ALL-CAPS section name in the page text
+    becomes a Section in the assembled Document.
+    """
+    pages = [
+        PageContent(
+            page_number=0,
+            text="STAR+METHODS\n\nDetails of methods used.\n\n"
+                 "KEY RESOURCES TABLE\n\nA table of key resources.",
+            tables=[], figures=[], confidence=0.9,
+        ),
+    ]
+    result = assemble_markdown(pages)
+    titles = [s.title for s in result.sections]
+    assert "STAR+METHODS" in titles
+    assert "KEY RESOURCES TABLE" in titles

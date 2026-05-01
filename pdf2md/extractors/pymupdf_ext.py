@@ -19,22 +19,79 @@ _SUPERSCRIPT_RE = re.compile(r"^\d+[,\s\d]*$")
 
 
 def _is_bold_span(span: dict) -> bool:
-    """Return whether a PyMuPDF text span is bold or semibold."""
+    """Return whether a PyMuPDF text span is bold/semibold/heavy/black weight.
+
+    Recognises both the explicit bold flag (PyMuPDF flag bit 4) and a wide
+    range of font-name conventions used by scientific publishers:
+
+    - "bold"/"semibold" — most common
+    - "heavy"/"black" — Cell-press papers use HelveticaNeue-Heavy for
+      section headings; Adobe-Acrobat-encoded Cell papers expose this same
+      face as ``AdvPSHN-H`` (the trailing ``-H`` suffix) which we also treat
+      as a heavy/bold weight.
+    """
     flags = span.get("flags", 0)
-    font_name = span.get("font", "").lower()
-    return bool(flags & (1 << 4)) or "bold" in font_name or "semibold" in font_name
+    raw_font = span.get("font", "")
+    font_name = raw_font.lower()
+    if flags & (1 << 4):
+        return True
+    if "bold" in font_name or "semibold" in font_name:
+        return True
+    if "heavy" in font_name or "black" in font_name:
+        return True
+    # Trailing weight suffix used by Adv* / Type1-encoded Cell-press fonts
+    # e.g. "AdvPSHN-H" (Heavy), "AdvPSHN-B" (Bold). We accept "-H" or "-B"
+    # at the end of the (case-sensitive) font name, but only when the rest
+    # of the name is not a regular weight already handled above.
+    if raw_font.endswith(("-H", "-B")) and not font_name.endswith(("-r", "-l", "-m")):
+        return True
+    return False
 
 
 def _leading_bold_text(spans: list[dict]) -> str:
-    """Return the contiguous bold text at the start of a line."""
+    """Return the contiguous bold text at the start of a line.
+
+    Tolerates short non-bold "bridge" spans between bold runs:
+
+    - Whitespace-only spans (commonly emitted by PyMuPDF as
+      ``GlyphLessFont`` separators between adjacent bold spans).
+    - Single-glyph symbol spans (e.g. the ★/✦ in ``STAR★METHODS``,
+      which Cell-press encodes as a short span in a symbol font that
+      lives between two bold ``HelveticaNeue-Heavy`` words).
+
+    Without these allowances, multi-word bold headings such as
+    ``OVERCOMING FUNCTIONAL CHALLENGES`` and ``STAR★METHODS`` would be
+    truncated to just the first word.
+    """
     parts: list[str] = []
+    pending: list[str] = []
     for span in spans:
         text = span.get("text", "")
         if not text:
             continue
-        if not _is_bold_span(span):
+        if _is_bold_span(span):
+            # bold span: flush any pending bridge spans, then append
+            if pending:
+                parts.extend(pending)
+                pending = []
+            parts.append(text)
+            continue
+        if not parts:
+            # haven't started a bold run yet → not a leading-bold line
             break
-        parts.append(text)
+        # We have an in-progress bold run and a non-bold span.
+        # Treat as a bridge if it's whitespace OR a short symbol/punct token.
+        stripped = text.strip()
+        if stripped == "":
+            pending.append(text)
+            continue
+        # Allow short symbolic glyphs (1-3 chars, no alphanumerics) — these
+        # are typically font-encoded ornaments between adjacent bold words.
+        if len(stripped) <= 3 and not any(c.isalnum() for c in stripped):
+            pending.append(text)
+            continue
+        # Real non-bold text — bold run ends here, drop pending bridges.
+        break
     return "".join(parts).strip()
 
 
@@ -239,7 +296,23 @@ class PymupdfExtractor:
                         "font_size": font_size,
                     })
 
+        total_pages = len(doc)
         doc.close()
+
+        # Filter out running headers: same heading text appearing on most
+        # pages (e.g. "Article", "Review", "Letter" on Cell-press papers).
+        if total_pages >= 4 and headings:
+            from collections import defaultdict
+            pages_by_text: dict[str, set[int]] = defaultdict(set)
+            for h in headings:
+                pages_by_text[h["text"]].add(h["page"])
+            running_headers = {
+                txt for txt, pages in pages_by_text.items()
+                if len(pages) >= 3 and len(pages) / total_pages >= 0.5
+            }
+            if running_headers:
+                headings = [h for h in headings if h["text"] not in running_headers]
+
         return headings
 
     def extract_figures(
