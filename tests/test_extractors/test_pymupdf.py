@@ -86,3 +86,105 @@ class TestPymupdfExtractor:
         restricted = ext.extract_figures(sample_pdf_bytes, max_per_page=1)
         # Restricted should have no more figures than unrestricted
         assert len(restricted) <= len(unrestricted)
+
+
+# --- Vector-graphics figure detection ---------------------------------------
+
+
+def _make_vector_figure_pdf() -> bytes:
+    """Build a PDF whose only figure is a dense cluster of vector paths.
+
+    Modern review journals (Nat Rev Genetics) render figures as PDF
+    vector drawings rather than embedded raster images. ``get_images``
+    returns nothing for those pages but the figure is clearly visible.
+    The fixture mirrors that shape — a page with title text, then a
+    box of >>100 small line segments, then no images.
+    """
+    from io import BytesIO
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+
+    buf = BytesIO()
+    c = canvas.Canvas(buf, pagesize=letter)
+    c.setFont("Helvetica", 14)
+    c.drawString(72, 720, "Figure 1 | Schematic of a complex pathway.")
+
+    # Render ~600 short vector lines in a dense rectangle. This puts us
+    # well above the 100-drawing threshold without producing any
+    # raster image.
+    for i in range(20):
+        for j in range(30):
+            x = 80 + j * 12
+            y = 400 + i * 8
+            c.line(x, y, x + 8, y + 6)
+    c.showPage()
+
+    # Add a second page with nothing on it — the fallback should NOT
+    # invent a figure here.
+    c.drawString(72, 720, "Plain text on a follow-on page.")
+    c.showPage()
+
+    c.save()
+    return buf.getvalue()
+
+
+def test_vector_figures_extracted_when_no_raster():
+    """A page with no raster image but many vector drawings produces a
+    figure via the vector-fallback path."""
+    from pdf2md.extractors.pymupdf_ext import PymupdfExtractor
+    pdf_bytes = _make_vector_figure_pdf()
+    ext = PymupdfExtractor()
+    figures = ext.extract_figures(pdf_bytes)
+    assert len(figures) >= 1, "vector-only figure page should produce ≥ 1 figure"
+    fig = figures[0]
+    assert fig["page"] == 0
+    assert fig["image_bytes"][:8] == b"\x89PNG\r\n\x1a\n", "vector figures render as PNG"
+    assert fig["width"] >= 100 and fig["height"] >= 100
+
+
+def test_vector_fallback_does_not_invent_figures_on_blank_pages():
+    """The second page in the fixture has only a single text line — the
+    drawing count is well below the threshold and no figure should be
+    produced."""
+    from pdf2md.extractors.pymupdf_ext import PymupdfExtractor
+    pdf_bytes = _make_vector_figure_pdf()
+    figures = PymupdfExtractor().extract_figures(pdf_bytes)
+    blank_page_figures = [f for f in figures if f["page"] == 1]
+    assert blank_page_figures == [], "no vector figures expected on blank page"
+
+
+def test_vector_fallback_skips_pages_with_qualifying_raster():
+    """When a page already contains a raster image at or above the
+    min_width / min_height threshold the vector fallback must NOT add
+    a duplicate figure for the same page — that's the regression we'd
+    see on Nature-style papers where every figure-bearing page also
+    has a real raster."""
+    from io import BytesIO
+    from PIL import Image
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.utils import ImageReader
+    from reportlab.pdfgen import canvas
+    from pdf2md.extractors.pymupdf_ext import PymupdfExtractor
+
+    # Build a 400x300 blue rectangle as a raster image.
+    img = Image.new("RGB", (400, 300), color=(40, 70, 200))
+    img_buf = BytesIO()
+    img.save(img_buf, format="PNG")
+    img_buf.seek(0)
+
+    buf = BytesIO()
+    c = canvas.Canvas(buf, pagesize=letter)
+    c.drawString(72, 720, "Page with both a raster and many vectors.")
+    c.drawImage(ImageReader(img_buf), 72, 360, width=400, height=300)
+    # Lots of vector lines too — the fallback would otherwise fire.
+    for i in range(20):
+        for j in range(30):
+            c.line(80 + j * 6, 100 + i * 4, 80 + j * 6 + 4, 100 + i * 4 + 3)
+    c.showPage()
+    c.save()
+
+    figures = PymupdfExtractor().extract_figures(buf.getvalue())
+    assert len(figures) == 1, (
+        f"page with qualifying raster should produce exactly one figure, "
+        f"got {len(figures)}"
+    )
