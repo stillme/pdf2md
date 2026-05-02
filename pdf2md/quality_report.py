@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
@@ -114,6 +115,23 @@ def _has_figure_mentions(markdown: str) -> bool:
     return ("fig. " in lower) or ("figure " in lower)
 
 
+_TABLE_MENTION_RE = re.compile(r"\bTable\s+\d+\b")
+
+
+def _has_table_mentions(markdown: str) -> bool:
+    """True if the body text references numbered tables.
+
+    Symmetric reasoning to figure-mention detection: a long paper with
+    zero extracted tables AND no body text saying ``Table N`` legitimately
+    has no tables. Some life-science papers (Nature ``s41586-024-08216-z``
+    is a real example) really don't have any — flagging them as a
+    failure is a false positive that drowns the signal in the report.
+    """
+    if not markdown:
+        return False
+    return bool(_TABLE_MENTION_RE.search(markdown))
+
+
 def analyze_paper(result: PaperResult) -> PaperQuality | None:
     """Return a :class:`PaperQuality` for one converted paper.
 
@@ -167,10 +185,15 @@ def analyze_paper(result: PaperResult) -> PaperQuality | None:
                 "0 figures extracted but body text references figures — "
                 "likely vector graphics or extractor miss",
             ))
-        if pages > _NO_TABLES_PAGES and tables == 0:
+        if (
+            pages > _NO_TABLES_PAGES
+            and tables == 0
+            and _has_table_mentions(markdown)
+        ):
             flags.append(QualityFlag(
-                "no_tables_long_paper",
-                f"{pages} pages, 0 tables — likely table extractor miss",
+                "no_tables_with_mentions",
+                "0 tables extracted but body text references Table N — "
+                "likely table extractor miss",
             ))
         if pages > _FEW_REFS_PAGES and references == 0:
             flags.append(QualityFlag(

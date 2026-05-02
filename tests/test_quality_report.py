@@ -123,16 +123,35 @@ def test_no_figures_not_flagged_when_body_has_no_figure_mentions(tmp_path):
     assert "no_figures_with_mentions" not in pq.flags
 
 
-def test_no_tables_flagged_on_long_paper(tmp_path):
-    result = _write_doc(tmp_path, "notab", pages=40, tables=0)
+def test_no_tables_flagged_when_body_mentions_tables(tmp_path):
+    """The interesting case: 0 tables AND body says 'Table 1' — extractor missed something."""
+    result = _write_doc(
+        tmp_path, "notab", pages=40, tables=0,
+        markdown="As shown in Table 1 the cohort had 200 patients.",
+    )
     pq = analyze_paper(result)
-    assert "no_tables_long_paper" in pq.flags
+    assert "no_tables_with_mentions" in pq.flags
+
+
+def test_no_tables_not_flagged_when_body_has_no_table_mentions(tmp_path):
+    """Real example: Nature s41586-024-08216-z genuinely has zero tables.
+    Body text never says ``Table N`` — flagging it as a miss is a false
+    positive that drowns the signal in the batch report."""
+    result = _write_doc(
+        tmp_path, "notabnomentions", pages=40, tables=0,
+        markdown="A long paper that legitimately contains no tabular data.",
+    )
+    pq = analyze_paper(result)
+    assert "no_tables_with_mentions" not in pq.flags
 
 
 def test_no_tables_not_flagged_on_short_paper(tmp_path):
-    result = _write_doc(tmp_path, "shortnotab", pages=15, tables=0)
+    result = _write_doc(
+        tmp_path, "shortnotab", pages=15, tables=0,
+        markdown="See Table 1.",
+    )
     pq = analyze_paper(result)
-    assert "no_tables_long_paper" not in pq.flags
+    assert "no_tables_with_mentions" not in pq.flags
 
 
 def test_few_sections_flagged(tmp_path):
@@ -162,7 +181,7 @@ def test_very_long_document_skips_subflags(tmp_path):
     pq = analyze_paper(result)
     assert "very_long_document" in pq.flags
     assert "no_figures_with_mentions" not in pq.flags
-    assert "no_tables_long_paper" not in pq.flags
+    assert "no_tables_with_mentions" not in pq.flags
     assert "no_references" not in pq.flags
     assert "few_sections" not in pq.flags
     assert "long document" in pq.note
