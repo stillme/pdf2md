@@ -247,3 +247,133 @@ def test_integration_nature_paper_yields_many_references() -> None:
     refs = parse_references(md)
     assert len(refs) >= 30
     assert sum(1 for r in refs if r.authors) >= 30
+
+
+# --- Cell-press author-year style ---------------------------------------
+
+
+def test_uppercase_references_heading_is_detected() -> None:
+    """Cell, Trends, and many older Elsevier journals use ``## REFERENCES``
+    (all caps). The locator regex is case-insensitive, but verifying the
+    end-to-end path — heading + author-year body — guards against
+    accidental tightening of the regex."""
+    md = (
+        "## REFERENCES\n\n"
+        "Smith, J., Jones, K., and Lee, S. (2023). A title that survives. "
+        "J. Cell Biol. 45, 100-110.\n"
+        "Wong, A. and Chen, B. (2022). Another paper. Cell 184, 200-210.\n"
+    )
+    refs = parse_references(md)
+    assert len(refs) == 2
+    assert refs[0].year == "2023"
+    assert refs[1].year == "2022"
+
+
+def test_parses_cell_author_year_loose_format() -> None:
+    """Cell entries with normal whitespace must parse all structural
+    fields — the parser anchors on ``(YYYY)`` rather than relying on
+    period-spacing being well-preserved."""
+    md = (
+        "## References\n\n"
+        "Beltra, J.C., Bourbonnais, S., and Decaluwe, H. (2016). "
+        "IL2Rb-dependent signals drive terminal exhaustion. "
+        "Proc. Natl. Acad. Sci. USA 113, E5444-E5453.\n"
+    )
+    refs = parse_references(md)
+    assert len(refs) == 1
+    ref = refs[0]
+    assert ref.year == "2016"
+    assert ref.volume == "113"
+    assert ref.pages == "E5444-E5453"
+    assert "Beltra, J.C." in ref.authors
+    assert "Bourbonnais, S." in ref.authors
+    assert "Decaluwe, H." in ref.authors
+    assert ref.confidence >= 0.7
+
+
+def test_parses_cell_author_year_squished_format() -> None:
+    """Cell-press exports lose inter-token whitespace when reflowing
+    two-column layouts. The structural fields (authors, year, volume,
+    pages) must still be recovered even when title and journal are run
+    together."""
+    md = (
+        "## REFERENCES\n\n"
+        "Anderson,K.G.,Mayer-Barber,K.,andMasopust,D.(2014)."
+        "Intravascularstainingfordiscriminationoftissueleukocytes."
+        "Nat.Protoc.9,209-222.\n"
+    )
+    refs = parse_references(md)
+    assert len(refs) == 1
+    ref = refs[0]
+    assert ref.year == "2014"
+    assert ref.volume == "9"
+    assert ref.pages == "209-222"
+    assert "Anderson, K.G." in ref.authors
+    assert "Mayer-Barber, K." in ref.authors
+    assert "Masopust, D." in ref.authors
+
+
+def test_multi_line_author_block_does_not_split_into_two_entries() -> None:
+    """A long Cell author list wraps onto a second physical line that
+    also begins with ``Surname, X.``. Without the year-buffered guard,
+    the splitter would treat the wrap as a brand-new entry. The
+    implementation defers the new-entry decision until the previous
+    entry has captured a ``(YYYY)`` marker."""
+    md = (
+        "## REFERENCES\n\n"
+        "Alfei, F., Kanev, K., Hofmann, M., Wu, M., Ghoneim, H.E., Roelli, P.,\n"
+        "Utzschneider, D.T., von Hoesslin, M., Cullen, J.G., Fan, Y., et al. "
+        "(2019). TOX reinforces the phenotype of exhausted T cells. "
+        "Nature 571, 265-269.\n"
+        "Anderson, K.G. and Masopust, D. (2014). A different paper. "
+        "Nat. Protoc. 9, 209-222.\n"
+    )
+    refs = parse_references(md)
+    assert len(refs) == 2
+    assert refs[0].year == "2019"
+    assert refs[0].volume == "571"
+    assert refs[1].year == "2014"
+    assert "Alfei, F." in refs[0].authors
+    # The wrapped second-line authors must end up in the FIRST entry,
+    # not split off into a phantom entry.
+    assert "Utzschneider, D.T." in refs[0].authors
+
+
+def test_implicit_block_detected_for_author_year_run() -> None:
+    """A long alphabetised author-year list with no ``## References``
+    heading must still be picked up by the implicit-block detector.
+    Cell-press and some older Elsevier exports omit the heading entirely
+    when the references appear in a sidebar or boxed region."""
+    surnames = [
+        "Adams", "Brown", "Clark", "Davis", "Evans", "Foster",
+        "Garcia", "Harris", "Irving", "Jones", "Klein",
+    ]
+    md = "# Body\n\nSome paragraph.\n\n" + "\n".join(
+        f"{surname}, A. and Other, B. ({2020 + i % 5}). "
+        f"Title {i + 1}. Journal {i + 1}, 1-{i + 1}."
+        for i, surname in enumerate(surnames)
+    )
+    refs = parse_references(md)
+    assert len(refs) == 11
+    assert refs[0].year == "2020"
+    assert refs[-1].id == "ref-11"
+
+
+def test_existing_numbered_nature_entries_unaffected_by_cell_dispatch() -> None:
+    """The Cell author-year dispatch must not steal Nature-style entries
+    that share the ``Surname, X.`` opener — those entries end with
+    ``(YYYY).`` and have a ``& Surname, Y.`` connector that the Cell
+    detector excludes."""
+    md = (
+        "## References\n\n"
+        "1. Smith, J. & Jones, K. Title of paper. J. Name 45, 100-110 (2023).\n"
+    )
+    refs = parse_references(md)
+    assert len(refs) == 1
+    ref = refs[0]
+    assert ref.year == "2023"
+    assert ref.volume == "45"
+    assert ref.pages == "100-110"
+    assert "Smith, J." in ref.authors
+    assert "Jones, K." in ref.authors
+    assert ref.confidence >= 0.7
