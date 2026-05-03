@@ -1,7 +1,7 @@
 """Tests for figure caption extraction and matching."""
 
-from pdf2md.document import Figure
-from pdf2md.enhancers.captions import (
+from pdfvault.document import Figure
+from pdfvault.enhancers.captions import (
     extract_figure_captions,
     extract_panel_references,
     insert_caption_text_blocks,

@@ -1,7 +1,7 @@
-"""Tests for pdf2md configuration."""
+"""Tests for pdfvault configuration."""
 
 import os
-from pdf2md.config import Config, Tier, FigureMode
+from pdfvault.config import Config, Tier, FigureMode
 
 
 def test_default_config():
@@ -21,9 +21,9 @@ def test_config_from_tier_string():
 
 
 def test_config_from_env(monkeypatch):
-    monkeypatch.setenv("PDF2MD_TIER", "standard")
-    monkeypatch.setenv("PDF2MD_FIGURES", "describe")
-    monkeypatch.setenv("PDF2MD_PROVIDER", "gemini/gemini-2.0-flash")
+    monkeypatch.setenv("PDFVAULT_TIER", "standard")
+    monkeypatch.setenv("PDFVAULT_FIGURES", "describe")
+    monkeypatch.setenv("PDFVAULT_PROVIDER", "gemini/gemini-2.0-flash")
     c = Config()
     assert c.tier == Tier.STANDARD
     assert c.figures == FigureMode.DESCRIBE

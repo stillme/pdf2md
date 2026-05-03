@@ -1,6 +1,6 @@
 """Tests for Gemini VLM provider."""
 from unittest.mock import patch, MagicMock
-from pdf2md.providers.gemini import GeminiProvider
+from pdfvault.providers.gemini import GeminiProvider
 
 
 def test_gemini_provider_name():

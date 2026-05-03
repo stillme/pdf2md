@@ -2,8 +2,8 @@
 from unittest.mock import MagicMock
 import json
 
-from pdf2md.providers.base import VerifyCorrection, VerifyResult
-from pdf2md.verifier import (
+from pdfvault.providers.base import VerifyCorrection, VerifyResult
+from pdfvault.verifier import (
     _apply_corrections,
     run_verify_loop,
     verify_page,

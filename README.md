@@ -1,11 +1,11 @@
-# pdf2md
+# pdfvault
 
 **The first open-source agentic PDF-to-markdown parser.** Extract text, tables, figures, and equations with VLM-verified accuracy. Built for researchers, knowledge workers, and document automation pipelines.
 
-[![PyPI version](https://img.shields.io/pypi/v/pdf2md.svg)](https://pypi.org/project/pdf2md/)
+[![PyPI version](https://img.shields.io/pypi/v/pdfvault.svg)](https://pypi.org/project/pdfvault/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![GitHub stars](https://img.shields.io/github/stars/stillme/pdf2md?style=flat)](https://github.com/stillme/pdf2md)
+[![GitHub stars](https://img.shields.io/github/stars/stillme/pdfvault?style=flat)](https://github.com/stillme/pdfvault)
 
 **→ [See what we built](#what-makes-it-different) | [Quick start](#quick-start) | [Recipes](#common-tasks)**
 
@@ -13,7 +13,7 @@
 
 ## What makes it different
 
-| | pdf2md | marker | pymupdf4llm | docling |
+| | pdfvault | marker | pymupdf4llm | docling |
 |---|---|---|---|---|
 | **Approach** | Agentic verify-correct loop | ML pipeline | Rule-based | IBM document AI |
 | **Quality guarantee** | VLM compares output to page image | None | None | None |
@@ -22,7 +22,7 @@
 | **VLM support** | OpenAI, Anthropic, Google, Ollama | None | None | None |
 | **Structured output** | Sections, tables, figures, equations, bibliography, metadata | Markdown | Markdown | DoclingDocument |
 
-pdf2md analyzes each page's complexity and routes it to the right extraction engine. For high-stakes documents, the deep tier uses a VLM to visually compare the rendered PDF against the generated markdown, then corrects errors automatically.
+pdfvault analyzes each page's complexity and routes it to the right extraction engine. For high-stakes documents, the deep tier uses a VLM to visually compare the rendered PDF against the generated markdown, then corrects errors automatically.
 
 ### Features at a glance
 
@@ -42,27 +42,27 @@ pdf2md analyzes each page's complexity and routes it to the right extraction eng
 **Installation (2 minutes):**
 
 ```bash
-pip install pdf2md
+pip install pdfvault
 ```
 
 **Simplest possible example:**
 
 ```bash
-pdf2md convert paper.pdf -o paper.md
+pdfvault convert paper.pdf -o paper.md
 cat paper.md
 ```
 
 **Python API:**
 
 ```python
-import pdf2md
+import pdfvault
 
 # Convert a file
-doc = pdf2md.convert("paper.pdf")
+doc = pdfvault.convert("paper.pdf")
 print(doc.markdown)
 
 # From URL
-doc = pdf2md.convert("https://arxiv.org/pdf/2301.00001.pdf")
+doc = pdfvault.convert("https://arxiv.org/pdf/2301.00001.pdf")
 
 # Structured output (not just markdown)
 print(doc.metadata.title)
@@ -75,17 +75,17 @@ for fig in doc.figures:
 
 ```bash
 # Choose your tier (speed/cost tradeoff)
-pdf2md convert paper.pdf --tier fast        # ~0.5s/page, free
-pdf2md convert paper.pdf --tier standard    # ~2s/page, $0.01/page
-pdf2md convert paper.pdf --tier deep        # ~5s/page, $0.03/page (with VLM verify-correct)
+pdfvault convert paper.pdf --tier fast        # ~0.5s/page, free
+pdfvault convert paper.pdf --tier standard    # ~2s/page, $0.01/page
+pdfvault convert paper.pdf --tier deep        # ~5s/page, $0.03/page (with VLM verify-correct)
 
 # Handle figures
-pdf2md convert paper.pdf --figures extract   # Save images to disk
-pdf2md convert paper.pdf --figures describe  # VLM describes each figure
-pdf2md convert paper.pdf --figures skip      # Ignore figures
+pdfvault convert paper.pdf --figures extract   # Save images to disk
+pdfvault convert paper.pdf --figures describe  # VLM describes each figure
+pdfvault convert paper.pdf --figures skip      # Ignore figures
 
 # Batch processing
-pdf2md batch papers/ -o output/ --tier fast
+pdfvault batch papers/ -o output/ --tier fast
 ```
 
 ## Common tasks
@@ -93,22 +93,22 @@ pdf2md batch papers/ -o output/ --tier fast
 **Extract figures from a batch of research papers:**
 
 ```bash
-pdf2md batch papers/*.pdf --figures extract --tier standard -o output/
+pdfvault batch papers/*.pdf --figures extract --tier standard -o output/
 # Creates: output/paper1.md, output/paper1_figures/, etc.
 ```
 
 **Get just the text (no tables/figures, for speed):**
 
 ```bash
-pdf2md convert paper.pdf --tier fast --figures skip
+pdfvault convert paper.pdf --tier fast --figures skip
 ```
 
 **Use for knowledge graph / research indexing:**
 
 ```python
-import pdf2md
+import pdfvault
 
-doc = pdf2md.convert("paper.pdf", tier="standard", figures="describe")
+doc = pdfvault.convert("paper.pdf", tier="standard", figures="describe")
 
 # Structured output for downstream tools
 print(f"Title: {doc.metadata.title}")
@@ -139,7 +139,7 @@ uv run python autoresearch/loop.py --iterations 5
 - **Math/LaTeX conversion** — converts 60+ Unicode math symbols to LaTeX (`\nabla`, `\alpha`, `\sum`, etc.), wraps equations in `$...$` / `$$...$$` delimiters. Handles both display and inline equations.
 - **Figure extraction** — PyMuPDF extracts embedded images (200x200+ pixels) with xref dedup and `max_per_page` filtering (keeps only the largest image per page to prevent sub-panels from counting as separate figures). pypdfium2 renders full pages as fallback. Auto MIME detection (JPEG/PNG/GIF/WebP from magic bytes) and automatic image resizing for large figures (>1500px). VLM figure descriptions available on standard/deep tiers.
 - **Figure caption extraction** — Parses full figure legends from markdown text. Supports Nature style ("Fig. 1 | Caption text."), standard ("Figure 2. Caption text."), and Extended Data ("Extended Data Fig. 3 | Caption text."). Page-order caption matching prefers real captions over "See next page for caption" placeholders, synchronizes image alt text with the matched caption title, and reinserts the full caption block next to the matched figure marker.
-- **Figure index sidecar** — Builds a lightweight `pdf2md.figure_index.v1` JSON artifact with figure ids, labels, captions, page/markdown anchors, panel labels, in-text panel mentions, image hashes, and parse confidence. The sidecar excludes image blobs so downstream research and knowledge-graph workflows can consume figure evidence without loading the full document JSON.
+- **Figure index sidecar** — Builds a lightweight `pdfvault.figure_index.v1` JSON artifact with figure ids, labels, captions, page/markdown anchors, panel labels, in-text panel mentions, image hashes, and parse confidence. The sidecar excludes image blobs so downstream research and knowledge-graph workflows can consume figure evidence without loading the full document JSON.
 - **Panel reference parsing** — Extracts in-text references like "Fig. 3a", "Fig. 4c,d" with range expansion ("Fig. 2a--c" expands to panels a, b, c). 160 panel references found on the Nature benchmark paper.
 - **Superscript reference detection** — Wraps inline citation numbers (`regions1–8` becomes `regions<sup>1–8</sup>`) and author affiliations with `<sup>` tags. Safely excludes gene names (Ang4, Defa21), CamelCase gene identifiers with comma/range-like digits, figure/table identifiers (fig1, table2), and other non-reference digit patterns.
 - **Compound word hyphen handling** — Prefix/suffix-aware line-break rejoining preserves compound words (`microbiota-driven`, `region-enriched`) while correctly joining combining forms (`immunological`, `environmental`). Handles soft hyphens (U+00AD), PDF control hyphen markers (U+0002), and PDF replacement characters (U+FFBE/FFFE).
@@ -156,28 +156,28 @@ uv run python autoresearch/loop.py --iterations 5
 Core (pypdfium2 + pdfplumber, no optional dependencies):
 
 ```bash
-pip install pdf2md
+pip install pdfvault
 ```
 
 All engines:
 
 ```bash
-pip install pdf2md[full]
+pip install pdfvault[full]
 ```
 
 Individual extras:
 
 ```bash
-pip install pdf2md[marker]    # ML-based document understanding
-pip install pdf2md[pymupdf]   # Fast text + rendering
-pip install pdf2md[docling]   # IBM document AI
-pip install pdf2md[ocr]       # Tesseract + EasyOCR
+pip install pdfvault[marker]    # ML-based document understanding
+pip install pdfvault[pymupdf]   # Fast text + rendering
+pip install pdfvault[docling]   # IBM document AI
+pip install pdfvault[ocr]       # Tesseract + EasyOCR
 ```
 
 Development:
 
 ```bash
-pip install pdf2md[dev]
+pip install pdfvault[dev]
 ```
 
 ## Tiers
@@ -208,7 +208,7 @@ On scanned pages, the `standard` and `deep` tiers route extraction through the c
 
 ### Quality benchmarks
 
-The **autoresearch** quality scorer evaluates pdf2md on 10 dimensions using deterministic, pattern-based scoring (no LLM needed). Tested on the Nature gut adaptation paper (41 pages, 15 figures):
+The **autoresearch** quality scorer evaluates pdfvault on 10 dimensions using deterministic, pattern-based scoring (no LLM needed). Tested on the Nature gut adaptation paper (41 pages, 15 figures):
 
 | Dimension | What it measures | Score |
 |-----------|-----------------|-------|
@@ -243,11 +243,11 @@ The Nature paper (`s41586-024-08216-z`) is genuinely hard:
 - Statistical legends that need separation from body text
 - Author affiliations needing superscript formatting
 
-If pdf2md scores 100% on this, it handles the edge cases that break simpler tools.
+If pdfvault scores 100% on this, it handles the edge cases that break simpler tools.
 
 ## Providers
 
-pdf2md supports multiple VLM providers for the standard and deep tiers. Set the provider via environment variable or argument.
+pdfvault supports multiple VLM providers for the standard and deep tiers. Set the provider via environment variable or argument.
 
 **Environment variables:**
 
@@ -258,69 +258,69 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 export GOOGLE_API_KEY="AIza..."
 
 # Optional: set default provider
-export PDF2MD_PROVIDER="openai/gpt-4o"
+export PDFVAULT_PROVIDER="openai/gpt-4o"
 ```
 
 **Provider strings:**
 
 ```python
-doc = pdf2md.convert("paper.pdf", tier="deep", provider="anthropic/claude-sonnet-4-20250514")
-doc = pdf2md.convert("paper.pdf", tier="standard", provider="openai/gpt-4o")
-doc = pdf2md.convert("paper.pdf", tier="standard", provider="google/gemini-2.0-flash")
-doc = pdf2md.convert("paper.pdf", tier="standard", provider="ollama/llava")
+doc = pdfvault.convert("paper.pdf", tier="deep", provider="anthropic/claude-sonnet-4-20250514")
+doc = pdfvault.convert("paper.pdf", tier="standard", provider="openai/gpt-4o")
+doc = pdfvault.convert("paper.pdf", tier="standard", provider="google/gemini-2.0-flash")
+doc = pdfvault.convert("paper.pdf", tier="standard", provider="ollama/llava")
 ```
 
-Auto-detection: if no provider is specified, pdf2md checks for available API keys in order (Anthropic, OpenAI, Google, Ollama) and uses the first one found.
+Auto-detection: if no provider is specified, pdfvault checks for available API keys in order (Anthropic, OpenAI, Google, Ollama) and uses the first one found.
 
 ### Caching
 
-pdf2md can cache VLM responses on disk to make repeated runs (autoresearch, benchmarks) cheap. Set `PDF2MD_CACHE=1` to enable the content-addressed cache, keyed by `(prompt, model, image)`. Cache files default to `~/.cache/pdf2md` and the location can be overridden with `PDF2MD_CACHE_DIR=/path`. Caching is OFF by default and never raises on read/write failures.
+pdfvault can cache VLM responses on disk to make repeated runs (autoresearch, benchmarks) cheap. Set `PDFVAULT_CACHE=1` to enable the content-addressed cache, keyed by `(prompt, model, image)`. Cache files default to `~/.cache/pdfvault` and the location can be overridden with `PDFVAULT_CACHE_DIR=/path`. Caching is OFF by default and never raises on read/write failures.
 
 ## CLI usage
 
 ```bash
 # Convert a PDF to markdown (stdout)
-pdf2md convert paper.pdf
+pdfvault convert paper.pdf
 
 # Write to file
-pdf2md convert paper.pdf -o paper.md
+pdfvault convert paper.pdf -o paper.md
 
 # Specify tier
-pdf2md convert paper.pdf --tier deep
+pdfvault convert paper.pdf --tier deep
 
 # Figure handling
-pdf2md convert paper.pdf --figures describe   # VLM describes each figure
-pdf2md convert paper.pdf --figures extract     # Saves figure images to disk
-pdf2md convert paper.pdf --figures skip        # Ignores figures entirely
-pdf2md convert paper.pdf -o paper.md --figures-json paper.figures.json
+pdfvault convert paper.pdf --figures describe   # VLM describes each figure
+pdfvault convert paper.pdf --figures extract     # Saves figure images to disk
+pdfvault convert paper.pdf --figures skip        # Ignores figures entirely
+pdfvault convert paper.pdf -o paper.md --figures-json paper.figures.json
 
 # JSON output (includes sections, tables, metadata)
-pdf2md convert paper.pdf --json
+pdfvault convert paper.pdf --json
 
 # Skip verification (faster deep tier)
-pdf2md convert paper.pdf --tier deep --no-verify
+pdfvault convert paper.pdf --tier deep --no-verify
 
 # Show installed engines and configured providers
-pdf2md info
+pdfvault info
 
 # Version
-pdf2md --version
+pdfvault --version
 ```
 
 ## Python API
 
 ```python
-import pdf2md
+import pdfvault
 
 # Basic conversion
-doc = pdf2md.convert("paper.pdf")
+doc = pdfvault.convert("paper.pdf")
 
 # From URL
-doc = pdf2md.convert("https://arxiv.org/pdf/2301.00001.pdf")
+doc = pdfvault.convert("https://arxiv.org/pdf/2301.00001.pdf")
 
 # From bytes
 with open("paper.pdf", "rb") as f:
-    doc = pdf2md.convert(f.read())
+    doc = pdfvault.convert(f.read())
 
 # Full markdown
 print(doc.markdown)
@@ -347,7 +347,7 @@ for entry in doc.figure_index:
     print(f"  {entry.label}: panels={entry.panels}, mentions={len(entry.mentions)}")
 
 # Panel references (in-text figure citations)
-from pdf2md.enhancers.captions import extract_panel_references
+from pdfvault.enhancers.captions import extract_panel_references
 refs = extract_panel_references(doc.markdown)
 for ref in refs:
     print(f"  Fig.{ref['fig_num']} panels {ref['panels']}: {ref['context']}")
@@ -362,7 +362,7 @@ doc.save_figure_index("output.figures.json")
 doc.save_figures("figures/")
 
 # Batch conversion
-docs = pdf2md.convert_batch(["a.pdf", "b.pdf", "c.pdf"], tier="fast")
+docs = pdfvault.convert_batch(["a.pdf", "b.pdf", "c.pdf"], tier="fast")
 
 # Confidence scores (deep tier)
 print(f"Overall: {doc.confidence:.0%}")
@@ -380,15 +380,15 @@ print(f"Engine: {doc.engine_used}, Tier: {doc.tier_used}, Time: {doc.processing_
 ```python
 from langchain.document_loaders.base import BaseLoader
 from langchain.schema import Document
-import pdf2md
+import pdfvault
 
-class PDF2MDLoader(BaseLoader):
+class PDFVaultLoader(BaseLoader):
     def __init__(self, file_path: str, tier: str = "standard"):
         self.file_path = file_path
         self.tier = tier
 
     def load(self) -> list[Document]:
-        doc = pdf2md.convert(self.file_path, tier=self.tier)
+        doc = pdfvault.convert(self.file_path, tier=self.tier)
         return [
             Document(
                 page_content=doc.markdown,
@@ -402,17 +402,17 @@ class PDF2MDLoader(BaseLoader):
         ]
 
 # Use in your RAG pipeline
-loader = PDF2MDLoader("research.pdf", tier="standard")
+loader = PDFVaultLoader("research.pdf", tier="standard")
 docs = loader.load()
 ```
 
 **Extracting structured data (graphs, databases):**
 
 ```python
-import pdf2md
+import pdfvault
 import json
 
-doc = pdf2md.convert("paper.pdf", tier="standard", figures="describe")
+doc = pdfvault.convert("paper.pdf", tier="standard", figures="describe")
 
 # Export structured data
 output = {
@@ -442,14 +442,14 @@ with open("paper.structured.json", "w") as f:
 **Batch processing with quality reports:**
 
 ```python
-import pdf2md
+import pdfvault
 from pathlib import Path
 
 papers = list(Path("papers/").glob("*.pdf"))
 results = []
 
 for pdf_path in papers:
-    doc = pdf2md.convert(str(pdf_path), tier="auto")
+    doc = pdfvault.convert(str(pdf_path), tier="auto")
     results.append({
         "file": pdf_path.name,
         "title": doc.metadata.title,
@@ -471,7 +471,7 @@ for r in results:
 
 | Problem | Cause | Solution |
 |---------|-------|----------|
-| `No module named 'pdf2md'` | Package not installed | `pip install pdf2md` |
+| `No module named 'pdfvault'` | Package not installed | `pip install pdfvault` |
 | `OPENAI_API_KEY not found` | VLM provider not configured | `export OPENAI_API_KEY=sk-...` or use `--provider` |
 | Extraction is slow | Using deep tier by default | Use `--tier fast` for speed, `--tier auto` to be smart |
 | Figures not extracted | Scanned PDF with no text layer | Use `--tier standard` or `--tier deep` (routes to OCR) |
@@ -480,7 +480,7 @@ for r in results:
 | Out of memory on large PDFs | Processing all pages in parallel | Reduce `max_concurrent_pages` in config |
 | "Request too large" VLM error | Page image is >10MB | Reduce image size (auto-resize handles most cases) |
 
-**Still stuck?** Check the [issues](https://github.com/stillme/pdf2md/issues) or open a new one with your PDF and the full error output.
+**Still stuck?** Check the [issues](https://github.com/stillme/pdfvault/issues) or open a new one with your PDF and the full error output.
 
 ---
 
@@ -489,9 +489,9 @@ for r in results:
 **For speed (research indexing, knowledge graphs):**
 
 ```python
-import pdf2md
+import pdfvault
 
-doc = pdf2md.convert(
+doc = pdfvault.convert(
     "paper.pdf",
     tier="fast",                    # No VLM calls
     figures="skip",                 # Skip image extraction
@@ -503,7 +503,7 @@ doc = pdf2md.convert(
 **For quality (high-stakes documents):**
 
 ```python
-doc = pdf2md.convert(
+doc = pdfvault.convert(
     "paper.pdf",
     tier="deep",                    # VLM verify-correct loop
     max_verify_rounds=3,            # More iterations
@@ -515,7 +515,7 @@ doc = pdf2md.convert(
 **For cost efficiency (default, recommended):**
 
 ```python
-doc = pdf2md.convert("paper.pdf", tier="auto")
+doc = pdfvault.convert("paper.pdf", tier="auto")
 # Analyzes each page, picks the cheapest tier that works
 # Fast pages stay free, complex layouts use VLM only when needed
 ```
@@ -537,14 +537,14 @@ Environment variables:
 
 | Variable | Description | Default |
 |---|---|---|
-| `PDF2MD_TIER` | Default processing tier | `auto` |
-| `PDF2MD_FIGURES` | Default figure handling mode | `caption` |
-| `PDF2MD_PROVIDER` | Default VLM provider string | Auto-detect |
+| `PDFVAULT_TIER` | Default processing tier | `auto` |
+| `PDFVAULT_FIGURES` | Default figure handling mode | `caption` |
+| `PDFVAULT_PROVIDER` | Default VLM provider string | Auto-detect |
 
 Programmatic configuration:
 
 ```python
-from pdf2md.config import Config, Tier, FigureMode
+from pdfvault.config import Config, Tier, FigureMode
 
 config = Config(
     tier=Tier.DEEP,
@@ -564,22 +564,22 @@ The core package (pypdfium2 + pdfplumber) is MIT-licensed. Optional engines have
 |---|---|---|---|
 | pypdfium2 | Included | Apache 2.0 / BSD | Core text extraction |
 | pdfplumber | Included | MIT | Core table extraction |
-| Marker | `pip install pdf2md[marker]` | GPL-3.0 | ML-based, best quality for complex layouts. GPL applies to your project if distributed. |
-| PyMuPDF | `pip install pdf2md[pymupdf]` | AGPL-3.0 | Fast rendering. AGPL applies if used in a network service. |
-| Docling | `pip install pdf2md[docling]` | MIT | IBM document AI |
-| Tesseract | `pip install pdf2md[ocr]` | Apache 2.0 | OCR for scanned PDFs |
+| Marker | `pip install pdfvault[marker]` | GPL-3.0 | ML-based, best quality for complex layouts. GPL applies to your project if distributed. |
+| PyMuPDF | `pip install pdfvault[pymupdf]` | AGPL-3.0 | Fast rendering. AGPL applies if used in a network service. |
+| Docling | `pip install pdfvault[docling]` | MIT | IBM document AI |
+| Tesseract | `pip install pdfvault[ocr]` | Apache 2.0 | OCR for scanned PDFs |
 
 Check what is installed:
 
 ```bash
-pdf2md info
+pdfvault info
 ```
 
 ## Contributing
 
 ```bash
-git clone https://github.com/stillme/pdf2md
-cd pdf2md
+git clone https://github.com/stillme/pdfvault
+cd pdfvault
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev,full]"
 pytest -v

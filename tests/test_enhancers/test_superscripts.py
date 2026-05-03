@@ -1,6 +1,6 @@
 """Tests for superscript reference detection."""
 
-from pdf2md.enhancers.superscripts import detect_superscripts
+from pdfvault.enhancers.superscripts import detect_superscripts
 
 
 # --- Multi-digit references (high confidence) ---

@@ -1,8 +1,8 @@
 """Tests for the core convert() orchestrator."""
 
 import pytest
-from pdf2md import convert, Document
-from pdf2md.config import Tier
+from pdfvault import convert, Document
+from pdfvault.config import Tier
 
 
 def test_convert_file_path(sample_pdf_path):
@@ -65,14 +65,14 @@ def test_convert_standard_tier_with_mock_vlm(sample_pdf_bytes):
     mock_provider = MagicMock()
     mock_provider.name = "gemini"
     mock_provider.complete_sync.return_value = "A figure showing experimental results."
-    with patch("pdf2md.core._get_vlm_provider", return_value=mock_provider):
+    with patch("pdfvault.core._get_vlm_provider", return_value=mock_provider):
         doc = convert(sample_pdf_bytes, tier="standard", figures="describe")
         assert doc.tier_used == "standard"
 
 
 def test_convert_standard_without_vlm_falls_back(sample_pdf_bytes):
     from unittest.mock import patch
-    with patch("pdf2md.core._get_vlm_provider", return_value=None):
+    with patch("pdfvault.core._get_vlm_provider", return_value=None):
         doc = convert(sample_pdf_bytes, tier="standard")
         assert doc.metadata.pages == 2
         assert len(doc.markdown) > 100
@@ -83,12 +83,12 @@ def test_convert_standard_without_vlm_falls_back(sample_pdf_bytes):
 def test_deep_tier_preserves_title(sample_pdf_bytes):
     import json
     from unittest.mock import MagicMock, patch
-    import pdf2md
+    import pdfvault
     mock_provider = MagicMock()
     mock_provider.name = "test"
     mock_provider.complete_sync.return_value = json.dumps({"status": "pass", "confidence": 0.95, "corrections": []})
-    with patch("pdf2md.core._get_vlm_provider", return_value=mock_provider):
-        doc = pdf2md.convert(sample_pdf_bytes, tier="deep")
+    with patch("pdfvault.core._get_vlm_provider", return_value=mock_provider):
+        doc = pdfvault.convert(sample_pdf_bytes, tier="deep")
         assert doc.metadata.title is not None, "Title should be preserved after deep tier reassembly"
 
 
@@ -124,7 +124,7 @@ def test_convert_surfaces_equation_extraction_failure():
     """When VLM equation extraction raises, the failure must surface in
     doc.warnings without crashing the pipeline."""
     from unittest.mock import MagicMock, patch
-    import pdf2md
+    import pdfvault
 
     pdf_bytes = _generate_math_pdf()
 
@@ -138,8 +138,8 @@ def test_convert_surfaces_equation_extraction_failure():
 
     mock_provider.complete_sync.side_effect = side_effect
 
-    with patch("pdf2md.core._get_vlm_provider", return_value=mock_provider):
-        doc = pdf2md.convert(pdf_bytes, tier="standard", verify=False)
+    with patch("pdfvault.core._get_vlm_provider", return_value=mock_provider):
+        doc = pdfvault.convert(pdf_bytes, tier="standard", verify=False)
 
     # Pipeline did not crash and produced a document
     assert isinstance(doc, Document)
@@ -157,15 +157,15 @@ def test_convert_equations_false_skips_vlm_equation_calls():
     Lean-mode batch jobs on biomedical corpora can't afford a VLM call
     per page that happens to mention a Greek letter."""
     from unittest.mock import MagicMock, patch
-    import pdf2md
+    import pdfvault
 
     pdf_bytes = _generate_math_pdf()
     mock_provider = MagicMock()
     mock_provider.name = "test"
     mock_provider.complete_sync.return_value = ""
 
-    with patch("pdf2md.core._get_vlm_provider", return_value=mock_provider):
-        doc = pdf2md.convert(
+    with patch("pdfvault.core._get_vlm_provider", return_value=mock_provider):
+        doc = pdfvault.convert(
             pdf_bytes, tier="standard", verify=False, equations=False,
         )
 
@@ -186,15 +186,15 @@ def test_convert_equations_true_default_still_runs_math_pipeline():
     """Backwards-compat check: omitting ``equations`` keeps the old
     behaviour and the math VLM loop fires on math-heavy pages."""
     from unittest.mock import MagicMock, patch
-    import pdf2md
+    import pdfvault
 
     pdf_bytes = _generate_math_pdf()
     mock_provider = MagicMock()
     mock_provider.name = "test"
     mock_provider.complete_sync.return_value = ""
 
-    with patch("pdf2md.core._get_vlm_provider", return_value=mock_provider):
-        pdf2md.convert(pdf_bytes, tier="standard", verify=False)
+    with patch("pdfvault.core._get_vlm_provider", return_value=mock_provider):
+        pdfvault.convert(pdf_bytes, tier="standard", verify=False)
 
     saw_math_prompt = any(
         "mathematical equations" in (

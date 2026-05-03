@@ -1,6 +1,6 @@
 """Tests for Unicode normalization (soft hyphens, ligatures, control chars)."""
 
-from pdf2md.enhancers.unicode_normalizer import normalize_unicode_text
+from pdfvault.enhancers.unicode_normalizer import normalize_unicode_text
 
 
 def test_soft_hyphen_between_letters_becomes_real_hyphen():

@@ -4,7 +4,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from pdf2md.providers._ratelimit import (
+from pdfvault.providers._ratelimit import (
     RateLimiter,
     is_429,
     is_429_or_529,

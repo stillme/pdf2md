@@ -1,13 +1,13 @@
 """Tests for math/LaTeX enhancer."""
 from unittest.mock import MagicMock
 
-from pdf2md.enhancers.math import (
+from pdfvault.enhancers.math import (
     UNICODE_TO_LATEX,
     convert_unicode_math,
     detect_math_regions,
     extract_equations_vlm,
 )
-from pdf2md.document import Equation
+from pdfvault.document import Equation
 
 
 # ── Unicode → LaTeX basic conversion ─────────────────────────────────

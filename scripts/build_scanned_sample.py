@@ -31,7 +31,7 @@ PAGE_TEXT = [
     "This page exists only as a raster image.",
     "There is no embedded text layer, so any",
     "selectable-text extractor will return an",
-    "empty string for this page. The pdf2md",
+    "empty string for this page. The pdfvault",
     "triage layer should detect this case and",
     "route extraction through the VLM engine.",
     "",

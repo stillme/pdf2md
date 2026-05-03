@@ -1,7 +1,7 @@
 """Tests for the confidence scoring module."""
 
-from pdf2md.confidence import PageSignals, score_page, rescore_document
-from pdf2md.document import Document, Figure, Metadata, Table
+from pdfvault.confidence import PageSignals, score_page, rescore_document
+from pdfvault.document import Document, Figure, Metadata, Table
 
 
 def test_text_page_high_confidence():

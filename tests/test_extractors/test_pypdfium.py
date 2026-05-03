@@ -5,8 +5,8 @@ from unittest.mock import patch
 
 import pypdfium2 as pdfium
 import pytest
-from pdf2md.extractors.base import PageContent
-from pdf2md.extractors.pypdfium_ext import (
+from pdfvault.extractors.base import PageContent
+from pdfvault.extractors.pypdfium_ext import (
     PypdfiumExtractor,
     _is_two_column_layout,
 )
@@ -133,7 +133,7 @@ def test_pypdfium_falls_back_to_pdfplumber_for_2_column():
     )
 
     with patch(
-        "pdf2md.extractors.pdfplumber_ext.PdfplumberExtractor.extract_page",
+        "pdfvault.extractors.pdfplumber_ext.PdfplumberExtractor.extract_page",
         return_value=fake_page,
     ) as spy:
         page = PypdfiumExtractor().extract_page(pdf_bytes, 0)
@@ -146,7 +146,7 @@ def test_pypdfium_skips_fallback_for_single_column():
     """Single-column pages must keep the fast pdfium path (no pdfplumber call)."""
     pdf_bytes = _build_single_column_pdf()
     with patch(
-        "pdf2md.extractors.pdfplumber_ext.PdfplumberExtractor.extract_page",
+        "pdfvault.extractors.pdfplumber_ext.PdfplumberExtractor.extract_page",
     ) as spy:
         page = PypdfiumExtractor().extract_page(pdf_bytes, 0)
 

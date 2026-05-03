@@ -1,9 +1,9 @@
 """Tests for markdown quality fixes — soft hyphens, journal headers, false math."""
 
 import pytest
-from pdf2md.assembler import _clean_hyphens, _clean_page_text, _detect_repeated_lines
-from pdf2md.enhancers.math import convert_unicode_math
-from pdf2md.extractors.base import PageContent
+from pdfvault.assembler import _clean_hyphens, _clean_page_text, _detect_repeated_lines
+from pdfvault.enhancers.math import convert_unicode_math
+from pdfvault.extractors.base import PageContent
 
 
 # ── Soft hyphen removal ─────────────────────────────────────────────

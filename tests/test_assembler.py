@@ -1,8 +1,8 @@
 """Tests for markdown assembler."""
 
 import pytest
-from pdf2md.assembler import assemble_markdown
-from pdf2md.extractors.base import PageContent, RawTable, RawFigure
+from pdfvault.assembler import assemble_markdown
+from pdfvault.extractors.base import PageContent, RawTable, RawFigure
 
 
 def test_assemble_basic_text():
@@ -104,7 +104,7 @@ def test_assemble_strips_headers_footers():
 # --- Bug 1: Numbered section headings ---
 
 def test_numbered_headings():
-    from pdf2md.assembler import _is_heading
+    from pdfvault.assembler import _is_heading
     assert _is_heading("1 Introduction") is not None
     assert _is_heading("2 Methods") is not None
     assert _is_heading("2.1 Data Collection") is not None
@@ -116,7 +116,7 @@ def test_numbered_headings():
 # --- Bug 2: Gene names not headings ---
 
 def test_gene_names_not_headings():
-    from pdf2md.assembler import _is_heading
+    from pdfvault.assembler import _is_heading
     assert _is_heading("RHOA") is None
     assert _is_heading("SPLICEOSOME") is None
     assert _is_heading("ISCU") is None
@@ -154,7 +154,7 @@ def test_no_duplicate_table_text():
 
 
 def test_figure_panel_labels_not_headings():
-    from pdf2md.assembler import _is_heading
+    from pdfvault.assembler import _is_heading
     assert _is_heading("SPF GF FMT") is None
     assert _is_heading("AB CD AB CD AB CD") is None
     assert _is_heading("WT KO WT KO") is None
@@ -289,7 +289,7 @@ def test_bold_headings_none_is_noop():
 
 def test_clean_hyphens_preserves_compound_words():
     """Compound words at line breaks should keep the hyphen."""
-    from pdf2md.assembler import _clean_hyphens
+    from pdfvault.assembler import _clean_hyphens
     assert _clean_hyphens("microbiota-\ndriven") == "microbiota-driven"
     assert _clean_hyphens("region-\nenriched") == "region-enriched"
     assert _clean_hyphens("single-\ncell") == "single-cell"
@@ -299,7 +299,7 @@ def test_clean_hyphens_preserves_compound_words():
 
 def test_clean_hyphens_joins_combining_prefixes():
     """Latin/Greek combining forms at line breaks should join without hyphen."""
-    from pdf2md.assembler import _clean_hyphens
+    from pdfvault.assembler import _clean_hyphens
     assert _clean_hyphens("immuno-\nlogical") == "immunological"
     assert _clean_hyphens("physio-\nlogical") == "physiological"
     assert _clean_hyphens("neuro-\ninflammation") == "neuroinflammation"
@@ -309,7 +309,7 @@ def test_clean_hyphens_joins_combining_prefixes():
 
 def test_clean_hyphens_joins_suffix_continuations():
     """Words broken at suffix boundaries should rejoin without hyphen."""
-    from pdf2md.assembler import _clean_hyphens
+    from pdfvault.assembler import _clean_hyphens
     assert _clean_hyphens("environ-\nmental") == "environmental"
     assert _clean_hyphens("transcrip-\ntional") == "transcriptional"
     assert _clean_hyphens("express-\ning") == "expressing"
@@ -318,7 +318,7 @@ def test_clean_hyphens_joins_suffix_continuations():
 
 def test_clean_hyphens_still_removes_soft_hyphens():
     """Soft hyphens (U+00AD) should still be removed."""
-    from pdf2md.assembler import _clean_hyphens
+    from pdfvault.assembler import _clean_hyphens
     assert _clean_hyphens("immuno\xadlogical") == "immunological"
     assert _clean_hyphens("soft\xadhyphen") == "softhyphen"
 

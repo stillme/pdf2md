@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
-from pdf2md.benchmarks.runner import BenchmarkResult, print_summary, BENCHMARK_PAPERS
+from pdfvault.benchmarks.runner import BenchmarkResult, print_summary, BENCHMARK_PAPERS
 
 
 def test_benchmark_papers_defined():
@@ -67,9 +67,9 @@ def test_benchmark_on_sample_pdf(sample_pdf_bytes):
         },
     ]
 
-    with patch("pdf2md.benchmarks.runner.httpx") as mock_httpx:
+    with patch("pdfvault.benchmarks.runner.httpx") as mock_httpx:
         mock_httpx.get.return_value = mock_response
-        from pdf2md.benchmarks.runner import run_benchmarks
+        from pdfvault.benchmarks.runner import run_benchmarks
         results = run_benchmarks(papers=test_papers, tier="fast")
         assert len(results) == 1
         assert results[0].pages == 2

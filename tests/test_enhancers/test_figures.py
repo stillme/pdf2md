@@ -1,8 +1,8 @@
 """Tests for figure enhancer."""
 from unittest.mock import MagicMock
-from pdf2md.enhancers.figures import enhance_figures
-from pdf2md.document import Figure
-from pdf2md.config import FigureMode
+from pdfvault.enhancers.figures import enhance_figures
+from pdfvault.document import Figure
+from pdfvault.config import FigureMode
 
 
 def test_skip_mode():

@@ -2,7 +2,7 @@
 from __future__ import annotations
 from pathlib import Path
 
-from pdf2md.cache import cache_key, cached_call
+from pdfvault.cache import cache_key, cached_call
 
 
 class _FakeProvider:
@@ -21,8 +21,8 @@ class _FakeProvider:
 
 
 def test_cache_disabled_by_default(monkeypatch, tmp_path):
-    monkeypatch.delenv("PDF2MD_CACHE", raising=False)
-    monkeypatch.setenv("PDF2MD_CACHE_DIR", str(tmp_path))
+    monkeypatch.delenv("PDFVAULT_CACHE", raising=False)
+    monkeypatch.setenv("PDFVAULT_CACHE_DIR", str(tmp_path))
     p = _FakeProvider()
     p.complete_sync("hi")
     p.complete_sync("hi")
@@ -32,8 +32,8 @@ def test_cache_disabled_by_default(monkeypatch, tmp_path):
 
 
 def test_cache_hit_returns_value_without_calling_provider(monkeypatch, tmp_path):
-    monkeypatch.setenv("PDF2MD_CACHE", "1")
-    monkeypatch.setenv("PDF2MD_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("PDFVAULT_CACHE", "1")
+    monkeypatch.setenv("PDFVAULT_CACHE_DIR", str(tmp_path))
     p = _FakeProvider(response="cached-answer")
     first = p.complete_sync("describe", image=b"\x89PNGfake")
     second = p.complete_sync("describe", image=b"\x89PNGfake")
@@ -43,7 +43,7 @@ def test_cache_hit_returns_value_without_calling_provider(monkeypatch, tmp_path)
 
 
 def test_cache_key_changes_with_image_bytes(monkeypatch, tmp_path):
-    monkeypatch.setenv("PDF2MD_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("PDFVAULT_CACHE_DIR", str(tmp_path))
     k1 = cache_key(prompt="p", model="m", image=b"AAA")
     k2 = cache_key(prompt="p", model="m", image=b"BBB")
     k3 = cache_key(prompt="p", model="m", image=None)
@@ -53,8 +53,8 @@ def test_cache_key_changes_with_image_bytes(monkeypatch, tmp_path):
 
 
 def test_cache_atomic_write(monkeypatch, tmp_path):
-    monkeypatch.setenv("PDF2MD_CACHE", "1")
-    monkeypatch.setenv("PDF2MD_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("PDFVAULT_CACHE", "1")
+    monkeypatch.setenv("PDFVAULT_CACHE_DIR", str(tmp_path))
     key = cache_key(prompt="x", model="fake-model", image=None, provider="fake")
     shard = tmp_path / key[:2]
     shard.mkdir(parents=True, exist_ok=True)
@@ -71,8 +71,8 @@ def test_cache_atomic_write(monkeypatch, tmp_path):
 
 
 def test_corrupt_cache_file_treated_as_miss(monkeypatch, tmp_path):
-    monkeypatch.setenv("PDF2MD_CACHE", "1")
-    monkeypatch.setenv("PDF2MD_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("PDFVAULT_CACHE", "1")
+    monkeypatch.setenv("PDFVAULT_CACHE_DIR", str(tmp_path))
     key = cache_key(prompt="q", model="fake-model", image=None, provider="fake")
     shard = tmp_path / key[:2]
     shard.mkdir(parents=True, exist_ok=True)
