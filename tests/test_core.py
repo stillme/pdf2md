@@ -77,7 +77,12 @@ def test_convert_standard_tier_with_mock_vlm(sample_pdf_bytes):
 
 def test_convert_standard_without_vlm_falls_back(sample_pdf_bytes):
     from unittest.mock import patch
-    with patch("pdfvault.core._get_vlm_provider", return_value=None):
+    from pdfvault.extractors.pypdfium_ext import PypdfiumExtractor
+    from pdfvault.extractors.pdfplumber_ext import PdfplumberExtractor
+    # Exclude marker (ML-based) so test exercises fallback logic, not marker
+    with patch("pdfvault.core._get_vlm_provider", return_value=None), \
+         patch("pdfvault.extractors.get_available_extractors",
+               return_value=[PypdfiumExtractor(), PdfplumberExtractor()]):
         doc = convert(sample_pdf_bytes, tier="standard")
         assert doc.metadata.pages == 2
         assert len(doc.markdown) > 100
