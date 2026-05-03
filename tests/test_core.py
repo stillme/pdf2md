@@ -93,11 +93,16 @@ def test_convert_standard_without_vlm_falls_back(sample_pdf_bytes):
 def test_deep_tier_preserves_title(sample_pdf_bytes):
     import json
     from unittest.mock import MagicMock, patch
+    from pdfvault.extractors.pypdfium_ext import PypdfiumExtractor
+    from pdfvault.extractors.pdfplumber_ext import PdfplumberExtractor
     import pdfvault
     mock_provider = MagicMock()
     mock_provider.name = "test"
     mock_provider.complete_sync.return_value = json.dumps({"status": "pass", "confidence": 0.95, "corrections": []})
-    with patch("pdfvault.core._get_vlm_provider", return_value=mock_provider):
+    # Exclude marker so test exercises deep tier verification logic, not marker
+    with patch("pdfvault.core._get_vlm_provider", return_value=mock_provider), \
+         patch("pdfvault.extractors.get_available_extractors",
+               return_value=[PypdfiumExtractor(), PdfplumberExtractor()]):
         doc = pdfvault.convert(sample_pdf_bytes, tier="deep")
         assert doc.metadata.title is not None, "Title should be preserved after deep tier reassembly"
 
