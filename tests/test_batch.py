@@ -9,14 +9,14 @@ from pathlib import Path
 
 import pytest
 
-from pdf2md.batch import (
+from pdfvault.batch import (
     BatchProgress,
     BatchSummary,
     PaperResult,
     discover_pdfs,
     run_batch,
 )
-from pdf2md.document import Document, Metadata
+from pdfvault.document import Document, Metadata
 
 
 def _fake_doc(text: str = "# Hello") -> Document:
@@ -24,7 +24,7 @@ def _fake_doc(text: str = "# Hello") -> Document:
 
 
 class _FakeConvert:
-    """Mock for pdf2md.convert that records calls and optionally raises / sleeps."""
+    """Mock for pdfvault.convert that records calls and optionally raises / sleeps."""
 
     def __init__(
         self,
@@ -125,7 +125,7 @@ def test_per_paper_failure_doesnt_abort(fake_pdfs, tmp_path):
     assert summary.skipped == 0
 
     # Failed paper recorded in checkpoint with the error message.
-    cp = json.loads((out / ".pdf2md-batch.json").read_text())
+    cp = json.loads((out / ".pdfvault-batch.json").read_text())
     failed_entries = [e for e in cp.values() if e["status"] == "failed"]
     assert len(failed_entries) == 1
     assert "forced failure" in failed_entries[0]["error"]
@@ -203,9 +203,9 @@ def test_checkpoint_atomic_write(fake_pdfs, tmp_path):
     out = tmp_path / "out"
     run_batch(fake_pdfs, output_dir=out, convert_fn=_FakeConvert())
 
-    cp = out / ".pdf2md-batch.json"
+    cp = out / ".pdfvault-batch.json"
     assert cp.exists()
-    assert not (out / ".pdf2md-batch.json.tmp").exists()
+    assert not (out / ".pdfvault-batch.json.tmp").exists()
     state = json.loads(cp.read_text())
     assert len(state) == 3
     assert all(v["status"] == "completed" for v in state.values())
@@ -222,7 +222,7 @@ def test_custom_checkpoint_path(fake_pdfs, tmp_path):
         convert_fn=_FakeConvert(),
     )
     assert custom.exists()
-    assert not (out / ".pdf2md-batch.json").exists()
+    assert not (out / ".pdfvault-batch.json").exists()
 
 
 def test_discover_pdfs_directory(tmp_path):

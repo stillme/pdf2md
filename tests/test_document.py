@@ -2,7 +2,7 @@
 
 import json
 
-from pdf2md.document import (
+from pdfvault.document import (
     Document, Metadata, Section, Figure, FigureIndexEntry, FigureMention,
     Table, Equation, Reference,
 )
@@ -139,6 +139,6 @@ def test_document_save_figure_index(tmp_path):
     out = tmp_path / "figures.json"
     doc.save_figure_index(str(out))
     data = json.loads(out.read_text())
-    assert data["schema_version"] == "pdf2md.figure_index.v1"
+    assert data["schema_version"] == "pdfvault.figure_index.v1"
     assert data["document"]["doi"] == "10.123/test"
     assert data["figures"][0]["figure_id"] == "fig1"

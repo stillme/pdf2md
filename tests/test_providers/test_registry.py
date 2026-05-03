@@ -1,7 +1,7 @@
 """Tests for VLM provider protocol and registry."""
 
-from pdf2md.providers.base import VLMProvider, VerifyCorrection, VerifyResult
-from pdf2md.providers.registry import detect_providers, get_provider
+from pdfvault.providers.base import VLMProvider, VerifyCorrection, VerifyResult
+from pdfvault.providers.registry import detect_providers, get_provider
 
 
 def test_verify_result_pass():

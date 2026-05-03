@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
-from pdf2md.providers.claude_cli import (
+from pdfvault.providers.claude_cli import (
     ClaudeCLIProvider,
     ClaudeCLIRateLimitError,
 )
@@ -73,9 +73,9 @@ def test_returns_result_text_from_stream_json():
         _result_event("hello world"),
     ])
     with (
-        patch("pdf2md.providers.claude_cli.shutil.which", return_value="/usr/bin/claude"),
+        patch("pdfvault.providers.claude_cli.shutil.which", return_value="/usr/bin/claude"),
         patch(
-            "pdf2md.providers.claude_cli.subprocess.run",
+            "pdfvault.providers.claude_cli.subprocess.run",
             return_value=_FakeProc(stdout=stdout),
         ),
     ):
@@ -86,9 +86,9 @@ def test_returns_result_text_from_stream_json():
 def test_raises_when_cli_returns_nonzero():
     provider = ClaudeCLIProvider(model="sonnet")
     with (
-        patch("pdf2md.providers.claude_cli.shutil.which", return_value="/usr/bin/claude"),
+        patch("pdfvault.providers.claude_cli.shutil.which", return_value="/usr/bin/claude"),
         patch(
-            "pdf2md.providers.claude_cli.subprocess.run",
+            "pdfvault.providers.claude_cli.subprocess.run",
             return_value=_FakeProc(stdout="", stderr="boom", returncode=2),
         ),
     ):
@@ -101,9 +101,9 @@ def test_raises_when_no_result_event_present():
     provider = ClaudeCLIProvider(model="sonnet")
     stdout = _rate_limit_event("allowed")  # no result line
     with (
-        patch("pdf2md.providers.claude_cli.shutil.which", return_value="/usr/bin/claude"),
+        patch("pdfvault.providers.claude_cli.shutil.which", return_value="/usr/bin/claude"),
         patch(
-            "pdf2md.providers.claude_cli.subprocess.run",
+            "pdfvault.providers.claude_cli.subprocess.run",
             return_value=_FakeProc(stdout=stdout),
         ),
     ):
@@ -115,9 +115,9 @@ def test_propagates_error_result():
     provider = ClaudeCLIProvider(model="sonnet")
     stdout = _result_event("server unavailable", is_error=True)
     with (
-        patch("pdf2md.providers.claude_cli.shutil.which", return_value="/usr/bin/claude"),
+        patch("pdfvault.providers.claude_cli.shutil.which", return_value="/usr/bin/claude"),
         patch(
-            "pdf2md.providers.claude_cli.subprocess.run",
+            "pdfvault.providers.claude_cli.subprocess.run",
             return_value=_FakeProc(stdout=stdout),
         ),
     ):
@@ -143,9 +143,9 @@ def test_raises_rate_limit_error_on_blocked_event():
         _result_event("(should be ignored)"),
     ])
     with (
-        patch("pdf2md.providers.claude_cli.shutil.which", return_value="/usr/bin/claude"),
+        patch("pdfvault.providers.claude_cli.shutil.which", return_value="/usr/bin/claude"),
         patch(
-            "pdf2md.providers.claude_cli.subprocess.run",
+            "pdfvault.providers.claude_cli.subprocess.run",
             return_value=_FakeProc(stdout=stdout),
         ),
     ):
@@ -162,9 +162,9 @@ def test_allowed_status_does_not_block():
         _result_event("ok"),
     ])
     with (
-        patch("pdf2md.providers.claude_cli.shutil.which", return_value="/usr/bin/claude"),
+        patch("pdfvault.providers.claude_cli.shutil.which", return_value="/usr/bin/claude"),
         patch(
-            "pdf2md.providers.claude_cli.subprocess.run",
+            "pdfvault.providers.claude_cli.subprocess.run",
             return_value=_FakeProc(stdout=stdout),
         ),
     ):
@@ -190,8 +190,8 @@ def test_image_payload_uses_base64_with_mime_type():
     png_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
 
     with (
-        patch("pdf2md.providers.claude_cli.shutil.which", return_value="/usr/bin/claude"),
-        patch("pdf2md.providers.claude_cli.subprocess.run", side_effect=fake_run),
+        patch("pdfvault.providers.claude_cli.shutil.which", return_value="/usr/bin/claude"),
+        patch("pdfvault.providers.claude_cli.subprocess.run", side_effect=fake_run),
     ):
         provider.complete_sync("describe", image=png_bytes)
 
@@ -214,8 +214,8 @@ def test_no_image_sends_text_only_payload():
         return _FakeProc(stdout=_result_event("ok"))
 
     with (
-        patch("pdf2md.providers.claude_cli.shutil.which", return_value="/usr/bin/claude"),
-        patch("pdf2md.providers.claude_cli.subprocess.run", side_effect=fake_run),
+        patch("pdfvault.providers.claude_cli.shutil.which", return_value="/usr/bin/claude"),
+        patch("pdfvault.providers.claude_cli.subprocess.run", side_effect=fake_run),
     ):
         provider.complete_sync("just text")
 
@@ -241,8 +241,8 @@ def test_invocation_passes_required_flags():
         return _FakeProc(stdout=_result_event("ok"))
 
     with (
-        patch("pdf2md.providers.claude_cli.shutil.which", return_value="/usr/bin/claude"),
-        patch("pdf2md.providers.claude_cli.subprocess.run", side_effect=fake_run),
+        patch("pdfvault.providers.claude_cli.shutil.which", return_value="/usr/bin/claude"),
+        patch("pdfvault.providers.claude_cli.subprocess.run", side_effect=fake_run),
     ):
         provider.complete_sync("anything")
 
@@ -262,7 +262,7 @@ def test_invocation_passes_required_flags():
 
 def test_raises_when_claude_binary_is_missing():
     provider = ClaudeCLIProvider(model="sonnet")
-    with patch("pdf2md.providers.claude_cli.shutil.which", return_value=None):
+    with patch("pdfvault.providers.claude_cli.shutil.which", return_value=None):
         with pytest.raises(RuntimeError, match="Claude CLI not found"):
             provider.complete_sync("anything")
 
@@ -273,7 +273,7 @@ def test_raises_when_claude_binary_is_missing():
 
 
 def test_registry_returns_claude_cli_provider_for_explicit_string():
-    from pdf2md.providers.registry import get_provider
+    from pdfvault.providers.registry import get_provider
 
     provider = get_provider("claude-cli")
     assert isinstance(provider, ClaudeCLIProvider)
@@ -283,14 +283,14 @@ def test_registry_returns_claude_cli_provider_for_explicit_string():
 def test_registry_accepts_name_with_underscore_alias():
     """``claude-cli`` and ``claude_cli`` both resolve — accept whichever
     feels natural in shell or Python contexts."""
-    from pdf2md.providers.registry import get_provider
+    from pdfvault.providers.registry import get_provider
 
     provider = get_provider("claude_cli/sonnet")
     assert isinstance(provider, ClaudeCLIProvider)
 
 
 def test_detect_providers_lists_claude_cli_with_binary_presence():
-    from pdf2md.providers.registry import detect_providers
+    from pdfvault.providers.registry import detect_providers
 
     with patch("shutil.which", return_value="/usr/bin/claude"):
         entries = detect_providers()
@@ -300,7 +300,7 @@ def test_detect_providers_lists_claude_cli_with_binary_presence():
 
 
 def test_detect_providers_marks_claude_cli_unavailable_when_missing():
-    from pdf2md.providers.registry import detect_providers
+    from pdfvault.providers.registry import detect_providers
 
     with patch("shutil.which", return_value=None):
         entries = detect_providers()
@@ -317,7 +317,7 @@ def test_default_model_is_haiku_for_batch_throughput():
 
 
 def test_registry_default_for_claude_cli_is_haiku():
-    from pdf2md.providers.registry import detect_providers
+    from pdfvault.providers.registry import detect_providers
 
     with patch("shutil.which", return_value="/usr/bin/claude"):
         entries = detect_providers()

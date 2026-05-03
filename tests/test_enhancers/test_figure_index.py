@@ -3,8 +3,8 @@
 import base64
 import hashlib
 
-from pdf2md.document import Figure
-from pdf2md.enhancers.figure_index import build_figure_index
+from pdfvault.document import Figure
+from pdfvault.enhancers.figure_index import build_figure_index
 
 
 def test_build_figure_index_maps_caption_blocks_and_mentions():

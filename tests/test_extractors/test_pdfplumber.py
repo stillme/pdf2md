@@ -4,7 +4,7 @@ from io import BytesIO
 from unittest.mock import patch
 
 import pytest
-from pdf2md.extractors.pdfplumber_ext import (
+from pdfvault.extractors.pdfplumber_ext import (
     PdfplumberExtractor,
     _is_degenerate_table,
     _normalize_layout_whitespace,

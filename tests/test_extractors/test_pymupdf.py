@@ -9,7 +9,7 @@ except ImportError:
 
 
 def test_leading_bold_text_stops_at_first_regular_span():
-    from pdf2md.extractors.pymupdf_ext import _leading_bold_text
+    from pdfvault.extractors.pymupdf_ext import _leading_bold_text
 
     spans = [
         {"text": "Spatial transcriptomics data processing.", "flags": 16, "font": "SemiBold"},
@@ -22,12 +22,12 @@ def test_leading_bold_text_stops_at_first_regular_span():
 @pytest.mark.skipif(not HAS_PYMUPDF, reason="pymupdf not installed")
 class TestPymupdfExtractor:
     def test_name(self):
-        from pdf2md.extractors.pymupdf_ext import PymupdfExtractor
+        from pdfvault.extractors.pymupdf_ext import PymupdfExtractor
         ext = PymupdfExtractor()
         assert ext.name == "pymupdf"
 
     def test_extract(self, sample_pdf_bytes):
-        from pdf2md.extractors.pymupdf_ext import PymupdfExtractor
+        from pdfvault.extractors.pymupdf_ext import PymupdfExtractor
         ext = PymupdfExtractor()
         result = ext.extract(sample_pdf_bytes)
         assert result.engine == "pymupdf"
@@ -35,13 +35,13 @@ class TestPymupdfExtractor:
         assert "Introduction" in result.pages[0].text
 
     def test_extract_page(self, sample_pdf_bytes):
-        from pdf2md.extractors.pymupdf_ext import PymupdfExtractor
+        from pdfvault.extractors.pymupdf_ext import PymupdfExtractor
         ext = PymupdfExtractor()
         page = ext.extract_page(sample_pdf_bytes, 1)
         assert "Discussion" in page.text
 
     def test_extract_bold_headings(self, sample_pdf_bytes):
-        from pdf2md.extractors.pymupdf_ext import PymupdfExtractor
+        from pdfvault.extractors.pymupdf_ext import PymupdfExtractor
         ext = PymupdfExtractor()
         headings = ext.extract_bold_headings(sample_pdf_bytes)
         assert isinstance(headings, list)
@@ -50,7 +50,7 @@ class TestPymupdfExtractor:
         assert any("Introduction" in t for t in titles) or any("Results" in t for t in titles)
 
     def test_extract_bold_headings_have_page_and_font_size(self, sample_pdf_bytes):
-        from pdf2md.extractors.pymupdf_ext import PymupdfExtractor
+        from pdfvault.extractors.pymupdf_ext import PymupdfExtractor
         ext = PymupdfExtractor()
         headings = ext.extract_bold_headings(sample_pdf_bytes)
         for h in headings:
@@ -61,14 +61,14 @@ class TestPymupdfExtractor:
             assert isinstance(h["font_size"], float)
 
     def test_extract_figures(self, sample_pdf_bytes):
-        from pdf2md.extractors.pymupdf_ext import PymupdfExtractor
+        from pdfvault.extractors.pymupdf_ext import PymupdfExtractor
         ext = PymupdfExtractor()
         figures = ext.extract_figures(sample_pdf_bytes)
         assert isinstance(figures, list)
         # Sample PDF may or may not have large images, but shouldn't error
 
     def test_extract_figures_max_per_page_one(self, sample_pdf_bytes):
-        from pdf2md.extractors.pymupdf_ext import PymupdfExtractor
+        from pdfvault.extractors.pymupdf_ext import PymupdfExtractor
         ext = PymupdfExtractor()
         # With max_per_page=1, each page contributes at most one figure
         figures = ext.extract_figures(sample_pdf_bytes, max_per_page=1)
@@ -79,7 +79,7 @@ class TestPymupdfExtractor:
         )
 
     def test_extract_figures_max_per_page_none_returns_all(self, sample_pdf_bytes):
-        from pdf2md.extractors.pymupdf_ext import PymupdfExtractor
+        from pdfvault.extractors.pymupdf_ext import PymupdfExtractor
         ext = PymupdfExtractor()
         # max_per_page=None disables the per-page limit
         unrestricted = ext.extract_figures(sample_pdf_bytes, max_per_page=None)
@@ -131,7 +131,7 @@ def _make_vector_figure_pdf() -> bytes:
 def test_vector_figures_extracted_when_no_raster():
     """A page with no raster image but many vector drawings produces a
     figure via the vector-fallback path."""
-    from pdf2md.extractors.pymupdf_ext import PymupdfExtractor
+    from pdfvault.extractors.pymupdf_ext import PymupdfExtractor
     pdf_bytes = _make_vector_figure_pdf()
     ext = PymupdfExtractor()
     figures = ext.extract_figures(pdf_bytes)
@@ -146,7 +146,7 @@ def test_vector_fallback_does_not_invent_figures_on_blank_pages():
     """The second page in the fixture has only a single text line — the
     drawing count is well below the threshold and no figure should be
     produced."""
-    from pdf2md.extractors.pymupdf_ext import PymupdfExtractor
+    from pdfvault.extractors.pymupdf_ext import PymupdfExtractor
     pdf_bytes = _make_vector_figure_pdf()
     figures = PymupdfExtractor().extract_figures(pdf_bytes)
     blank_page_figures = [f for f in figures if f["page"] == 1]
@@ -164,7 +164,7 @@ def test_vector_fallback_skips_pages_with_qualifying_raster():
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.utils import ImageReader
     from reportlab.pdfgen import canvas
-    from pdf2md.extractors.pymupdf_ext import PymupdfExtractor
+    from pdfvault.extractors.pymupdf_ext import PymupdfExtractor
 
     # Build a 400x300 blue rectangle as a raster image.
     img = Image.new("RGB", (400, 300), color=(40, 70, 200))

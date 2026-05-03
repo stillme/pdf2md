@@ -1,6 +1,6 @@
 """Tests for figure text leak cleaner."""
 
-from pdf2md.enhancers.text_cleaner import clean_figure_text
+from pdfvault.enhancers.text_cleaner import clean_figure_text
 
 
 def test_removes_gene_name_blocks():

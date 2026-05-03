@@ -1,4 +1,4 @@
-"""Shared test fixtures for pdf2md."""
+"""Shared test fixtures for pdfvault."""
 
 import pytest
 from pathlib import Path

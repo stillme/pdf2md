@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from pdf2md.batch import BatchSummary, PaperResult
-from pdf2md.quality_report import (
+from pdfvault.batch import BatchSummary, PaperResult
+from pdfvault.quality_report import (
     analyze_paper,
     build_quality_report,
     format_report_markdown,

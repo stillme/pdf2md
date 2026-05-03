@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Autoresearch loop — iteratively improves pdf2md quality.
+"""Autoresearch loop — iteratively improves pdfvault quality.
 
 Supports both Claude Code and Codex CLI as the coding agent.
 Runs locally. No GPU, no VM needed.
 
 Usage:
-    cd /path/to/pdf2md
+    cd /path/to/pdfvault
     uv run python autoresearch/loop.py [--iterations 10] [--dry-run]
     uv run python autoresearch/loop.py --agent codex --iterations 10
     uv run python autoresearch/loop.py --agent claude --iterations 10
@@ -60,16 +60,16 @@ MAX_FAILURES_PER_DIMENSION = 3
 
 # Source files relevant to each quality dimension
 DIMENSION_FILES = {
-    "figure_count": ["pdf2md/extractors/pymupdf_ext.py", "pdf2md/core.py"],
-    "figure_captions": ["pdf2md/enhancers/captions.py", "pdf2md/assembler.py"],
-    "figure_grouping": ["pdf2md/extractors/pymupdf_ext.py", "pdf2md/assembler.py", "pdf2md/core.py"],
-    "legend_separation": ["pdf2md/enhancers/text_cleaner.py", "pdf2md/assembler.py"],
-    "body_coherence": ["pdf2md/assembler.py", "pdf2md/enhancers/text_cleaner.py"],
-    "superscript_precision": ["pdf2md/enhancers/superscripts.py"],
-    "headings": ["pdf2md/assembler.py", "pdf2md/extractors/pymupdf_ext.py"],
-    "hyphens": ["pdf2md/assembler.py"],
-    "completeness": ["pdf2md/assembler.py", "pdf2md/enhancers/text_cleaner.py"],
-    "metadata": ["pdf2md/enhancers/metadata.py"],
+    "figure_count": ["pdfvault/extractors/pymupdf_ext.py", "pdfvault/core.py"],
+    "figure_captions": ["pdfvault/enhancers/captions.py", "pdfvault/assembler.py"],
+    "figure_grouping": ["pdfvault/extractors/pymupdf_ext.py", "pdfvault/assembler.py", "pdfvault/core.py"],
+    "legend_separation": ["pdfvault/enhancers/text_cleaner.py", "pdfvault/assembler.py"],
+    "body_coherence": ["pdfvault/assembler.py", "pdfvault/enhancers/text_cleaner.py"],
+    "superscript_precision": ["pdfvault/enhancers/superscripts.py"],
+    "headings": ["pdfvault/assembler.py", "pdfvault/extractors/pymupdf_ext.py"],
+    "hyphens": ["pdfvault/assembler.py"],
+    "completeness": ["pdfvault/assembler.py", "pdfvault/enhancers/text_cleaner.py"],
+    "metadata": ["pdfvault/enhancers/metadata.py"],
 }
 
 # How many consecutive failures before escalating model tier
@@ -79,12 +79,12 @@ ESCALATION_THRESHOLD = 2
 # ── Pipeline runner ────────────────────────────────────────────────────
 
 def run_pipeline() -> tuple[str, float]:
-    """Run pdf2md on the Nature paper and return (markdown, elapsed_seconds)."""
+    """Run pdfvault on the Nature paper and return (markdown, elapsed_seconds)."""
     t0 = time.monotonic()
     result = subprocess.run(
         ["uv", "run", "python", "-c", f"""
 import json
-from pdf2md.core import convert
+from pdfvault.core import convert
 doc = convert("{PDF_PATH}", tier="fast")
 print(json.dumps({{"markdown": doc.markdown}}))
 """],
@@ -135,16 +135,16 @@ def git_revert():
         ["git", "checkout", "--", "."], cwd=str(PROJECT_ROOT),
         capture_output=True,
     )
-    # Also remove any new untracked files in pdf2md/ and tests/
+    # Also remove any new untracked files in pdfvault/ and tests/
     subprocess.run(
-        ["git", "clean", "-fd", "pdf2md/", "tests/"],
+        ["git", "clean", "-fd", "pdfvault/", "tests/"],
         cwd=str(PROJECT_ROOT), capture_output=True,
     )
 
 
 def git_commit(message: str):
     subprocess.run(
-        ["git", "add", "-A", "pdf2md/", "tests/"],
+        ["git", "add", "-A", "pdfvault/", "tests/"],
         cwd=str(PROJECT_ROOT), capture_output=True,
     )
     subprocess.run(
@@ -167,10 +167,10 @@ def build_prompt(
     files = DIMENSION_FILES.get(dimension, [])
     files_str = ", ".join(files) if files else "the relevant enhancer/assembler modules"
 
-    return f"""You are improving the pdf2md library's markdown output quality.
+    return f"""You are improving the pdfvault library's markdown output quality.
 
 ## Context
-pdf2md converts scientific PDFs to structured markdown. We're optimizing quality
+pdfvault converts scientific PDFs to structured markdown. We're optimizing quality
 on a Nature paper (s41586-024-08216-z) using automated scoring.
 
 ## Current quality scores (0-100%)
@@ -494,7 +494,7 @@ def _log(path: Path, entry: dict):
 # ── CLI ────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="Autoresearch loop for pdf2md quality")
+    parser = argparse.ArgumentParser(description="Autoresearch loop for pdfvault quality")
     parser.add_argument("--iterations", type=int, default=10, help="Max iterations (default: 10)")
     parser.add_argument("--dry-run", action="store_true", help="Score only, don't invoke agent")
     parser.add_argument("--agent", choices=["claude", "codex"], default="claude",

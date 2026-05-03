@@ -1,7 +1,7 @@
 """Tests for table enhancer."""
 from unittest.mock import MagicMock
-from pdf2md.enhancers.tables import enhance_table
-from pdf2md.document import Table
+from pdfvault.enhancers.tables import enhance_table
+from pdfvault.document import Table
 
 CONFIDENCE_THRESHOLD = 0.7
 

@@ -1,5 +1,5 @@
 """Tests for metadata enhancer."""
-from pdf2md.enhancers.metadata import extract_metadata
+from pdfvault.enhancers.metadata import extract_metadata
 
 
 def test_extract_title_from_text():

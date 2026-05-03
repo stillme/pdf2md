@@ -1,7 +1,7 @@
 """Tests for extractor protocol and registry."""
 
-from pdf2md.extractors.base import Extractor, PageContent, ExtractionResult
-from pdf2md.extractors import get_available_extractors
+from pdfvault.extractors.base import Extractor, PageContent, ExtractionResult
+from pdfvault.extractors import get_available_extractors
 
 
 def test_page_content_creation():

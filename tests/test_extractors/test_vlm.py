@@ -1,7 +1,7 @@
 """Tests for VLM direct extractor."""
 import pytest
 from unittest.mock import MagicMock
-from pdf2md.extractors.vlm_ext import VLMExtractor
+from pdfvault.extractors.vlm_ext import VLMExtractor
 
 
 def test_vlm_extractor_name():

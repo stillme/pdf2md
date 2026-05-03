@@ -4,8 +4,8 @@ from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
-from pdf2md.cli import main
-from pdf2md.document import Document, Metadata
+from pdfvault.cli import main
+from pdfvault.document import Document, Metadata
 
 
 @pytest.fixture
@@ -43,7 +43,7 @@ def test_convert_writes_figure_index_sidecar(runner, sample_pdf_path, tmp_path):
     )
     assert result.exit_code == 0
     assert figures_json.exists()
-    assert "pdf2md.figure_index.v1" in figures_json.read_text()
+    assert "pdfvault.figure_index.v1" in figures_json.read_text()
 
 
 def test_convert_with_tier(runner, sample_pdf_path):
@@ -88,7 +88,7 @@ def test_batch_smoke(runner, tmp_path):
 
     fake_doc = Document(markdown="# Mock", metadata=Metadata(pages=1))
 
-    with patch("pdf2md.core.convert", return_value=fake_doc) as mock_convert:
+    with patch("pdfvault.core.convert", return_value=fake_doc) as mock_convert:
         result = runner.invoke(
             main,
             ["batch", str(in_dir), "--output-dir", str(out_dir), "--tier", "fast"],
@@ -100,7 +100,7 @@ def test_batch_smoke(runner, tmp_path):
     assert "Completed: 2" in result.output
     assert (out_dir / "one.md").exists()
     assert (out_dir / "two.md").exists()
-    assert (out_dir / ".pdf2md-batch.json").exists()
+    assert (out_dir / ".pdfvault-batch.json").exists()
 
 
 def test_batch_no_pdfs_found(runner, tmp_path):

@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from pdf2md.document import (
+from pdfvault.document import (
     Document,
     Figure,
     FigureIndexEntry,
     Metadata,
     Section,
 )
-from pdf2md.enhancers.cross_references import add_cross_references
+from pdfvault.enhancers.cross_references import add_cross_references
 
 
 def _doc(

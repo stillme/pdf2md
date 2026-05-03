@@ -2,7 +2,7 @@
 
 import json
 import pytest
-from pdf2md import convert, Document
+from pdfvault import convert, Document
 
 
 def test_full_pipeline_fast(sample_pdf_bytes):
@@ -42,12 +42,17 @@ def test_page_confidences(sample_pdf_bytes):
 def test_full_pipeline_deep_with_mock_vlm(sample_pdf_bytes):
     from unittest.mock import MagicMock, patch
     import json
+    from pdfvault.extractors.pypdfium_ext import PypdfiumExtractor
+    from pdfvault.extractors.pdfplumber_ext import PdfplumberExtractor
     mock_provider = MagicMock()
     mock_provider.name = "gemini"
     mock_provider.complete_sync.return_value = json.dumps({
         "status": "pass", "confidence": 0.92, "corrections": [],
     })
-    with patch("pdf2md.core._get_vlm_provider", return_value=mock_provider):
+    # Exclude marker so the test only exercises VLM logic, not the surya ML model
+    with patch("pdfvault.core._get_vlm_provider", return_value=mock_provider), \
+         patch("pdfvault.extractors.get_available_extractors",
+               return_value=[PypdfiumExtractor(), PdfplumberExtractor()]):
         doc = convert(sample_pdf_bytes, tier="deep", figures="caption")
         assert doc.metadata.pages == 2
         assert doc.confidence > 0
@@ -87,7 +92,7 @@ def test_scanned_pdf_routes_to_vlm(scanned_pdf_bytes):
     mock_provider.name = "claude-cli"
     mock_provider.complete_sync.return_value = canned_markdown
 
-    with patch("pdf2md.core._get_vlm_provider", return_value=mock_provider):
+    with patch("pdfvault.core._get_vlm_provider", return_value=mock_provider):
         doc = convert(scanned_pdf_bytes, tier="standard", provider="claude-cli")
 
     # The VLM extractor must have actually fired (not just been routed).

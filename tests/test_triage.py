@@ -1,8 +1,8 @@
 """Tests for triage — page analysis and engine routing."""
 
-from pdf2md.triage.analyzer import analyze_page, PageAnalysis
-from pdf2md.triage.router import select_engine, select_tier
-from pdf2md.config import Tier
+from pdfvault.triage.analyzer import analyze_page, PageAnalysis
+from pdfvault.triage.router import select_engine, select_tier
+from pdfvault.config import Tier
 
 
 def test_analyze_page_native_text(sample_pdf_bytes):

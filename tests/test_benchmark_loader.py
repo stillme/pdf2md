@@ -4,14 +4,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pdf2md.benchmarks import runner
-from pdf2md.benchmarks.runner import _load_pdf
+from pdfvault.benchmarks import runner
+from pdfvault.benchmarks.runner import _load_pdf
 
 
 def test_local_filename_resolves_under_env_dir(tmp_path, monkeypatch, capsys):
     """A paper with a ``local_filename`` is resolved beneath
-    ``$PDF2MD_BENCHMARK_DIR`` and its bytes are returned verbatim."""
-    monkeypatch.setenv("PDF2MD_BENCHMARK_DIR", str(tmp_path))
+    ``$PDFVAULT_BENCHMARK_DIR`` and its bytes are returned verbatim."""
+    monkeypatch.setenv("PDFVAULT_BENCHMARK_DIR", str(tmp_path))
 
     pdf_bytes = b"%PDF-1.4\n%fake-placeholder\n"
     (tmp_path / "paper.pdf").write_bytes(pdf_bytes)
@@ -35,7 +35,7 @@ def test_local_filename_falls_through_to_url_when_missing(
 ):
     """When the local file is missing but a URL is configured, the loader
     falls through and downloads from the URL."""
-    monkeypatch.setenv("PDF2MD_BENCHMARK_DIR", str(tmp_path))
+    monkeypatch.setenv("PDFVAULT_BENCHMARK_DIR", str(tmp_path))
     # Deliberately do NOT create the local file.
 
     pdf_bytes = b"%PDF-1.4\nfetched-from-url\n"
@@ -65,7 +65,7 @@ def test_local_filename_falls_through_to_url_when_missing(
 def test_skip_when_neither_path_nor_url_works(tmp_path, monkeypatch, capsys):
     """Loader returns ``None`` and prints a clear skip message when there is
     no usable local file and no URL."""
-    monkeypatch.setenv("PDF2MD_BENCHMARK_DIR", str(tmp_path))
+    monkeypatch.setenv("PDFVAULT_BENCHMARK_DIR", str(tmp_path))
 
     paper = {
         "name": "nowhere",
@@ -86,7 +86,7 @@ def test_skip_when_neither_path_nor_url_works_raises_when_strict(
 ):
     """With ``skip_errors=False`` the loader raises instead of returning
     ``None``."""
-    monkeypatch.setenv("PDF2MD_BENCHMARK_DIR", str(tmp_path))
+    monkeypatch.setenv("PDFVAULT_BENCHMARK_DIR", str(tmp_path))
 
     paper = {
         "name": "nowhere",

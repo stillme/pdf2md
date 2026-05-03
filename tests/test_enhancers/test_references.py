@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pdf2md.enhancers.references import (
+from pdfvault.enhancers.references import (
     parse_references,
     _parse_apa,
     _parse_nature,
@@ -241,7 +241,7 @@ def test_integration_nature_paper_yields_many_references() -> None:
         import pytest
         pytest.skip(
             "/tmp/bench-fast/nature-gut-adaptation.md missing — run "
-            "`uv run pdf2md benchmark --tier fast --output-dir /tmp/bench-fast`"
+            "`uv run pdfvault benchmark --tier fast --output-dir /tmp/bench-fast`"
         )
     md = open(md_path).read()
     refs = parse_references(md)
