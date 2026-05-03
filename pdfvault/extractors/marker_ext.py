@@ -36,7 +36,13 @@ class MarkerExtractor:
 
     def extract(self, pdf_bytes: bytes) -> ExtractionResult:
         converter = PdfConverter(artifact_dict=self._models)
-        rendered = converter(io.BytesIO(pdf_bytes))
+        try:
+            rendered = converter(io.BytesIO(pdf_bytes))
+        except Exception as exc:
+            raise RuntimeError(
+                f"marker extraction failed ({type(exc).__name__}: {exc}). "
+                "This may be a surya/torch model issue on non-GPU hardware."
+            ) from exc
         full_text, _, _ = text_from_rendered(rendered)
 
         # Split text by page markers if present, otherwise treat as single page

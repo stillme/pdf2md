@@ -62,10 +62,15 @@ def test_convert_save_markdown(sample_pdf_bytes, tmp_path):
 
 def test_convert_standard_tier_with_mock_vlm(sample_pdf_bytes):
     from unittest.mock import MagicMock, patch
+    from pdfvault.extractors.pypdfium_ext import PypdfiumExtractor
+    from pdfvault.extractors.pdfplumber_ext import PdfplumberExtractor
     mock_provider = MagicMock()
     mock_provider.name = "gemini"
     mock_provider.complete_sync.return_value = "A figure showing experimental results."
-    with patch("pdfvault.core._get_vlm_provider", return_value=mock_provider):
+    # Exclude marker so the test only exercises VLM logic, not the surya ML model
+    with patch("pdfvault.core._get_vlm_provider", return_value=mock_provider), \
+         patch("pdfvault.extractors.get_available_extractors",
+               return_value=[PypdfiumExtractor(), PdfplumberExtractor()]):
         doc = convert(sample_pdf_bytes, tier="standard", figures="describe")
         assert doc.tier_used == "standard"
 
